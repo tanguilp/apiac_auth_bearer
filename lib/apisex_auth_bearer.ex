@@ -8,14 +8,15 @@ defmodule APISexAuthBearer do
   @spec init(Plug.opts) :: Plug.opts
   def init(opts) do
     opts = %{
-      verify: Keyword.get(opts, :verify, nil),
+      token_validator: Keyword.get(opts, :token_validator, nil),
       cache: Keyword.get(opts, :cache, nil),
       allowed_methods: Keyword.get(opts, :authorized_methods, @default_authorized_methods),
       advertise_wwwauthenticate_header: Keyword.get(opts, :advertise_wwwauthenticate_header, true),
       wwwauthenticate_included_attributes: Keyword.get(opts, :wwwauthenticate_included_attributes, @default_wwwauthenticate_attributes),
       realm: Keyword.get(opts, :realm, @default_realm_name),
       halt_on_authentication_failure: Keyword.get(opts, :halt_on_authentication_failure, true),
-      scope: Keyword.get(opts, :scope, nil)
+      scope: Keyword.get(opts, :scope, nil),
+      forward_token: Keyword.get(opts, :scope, false)
     }
 
     #TODO: check scopes' well-formedness
@@ -36,11 +37,11 @@ defmodule APISexAuthBearer do
   @spec call(Plug.Conn, Plug.opts) :: Plug.Conn
   def call(conn, %{} = opts) do
     case call_parse_authorization_header(conn, opts) do
-      {conn, token} ->  verify_token(conn, opts, token)
+      {conn, token} ->  validate_token(conn, opts, token)
       :error -> case call_parse_body_parameter(conn, opts) do
-        {conn, token} -> verify_token(conn, opts, token)
+        {conn, token} -> validate_token(conn, opts, token)
         :error -> case  call_parse_uri_parameter(conn, opts) do
-          {conn, token} -> verify_token(conn, opts, token)
+          {conn, token} -> validate_token(conn, opts, token)
           :error -> authenticate_failure(conn, opts, :invalid_request, "No Bearer token found in request")
         end
       end
@@ -97,8 +98,13 @@ defmodule APISexAuthBearer do
     end
   end
 
-  defp verify_token(conn, %{verify: {:introspection_endpoint, introspect_uri}} = opts, token) do
-    conn
+  defp validate_token(conn, opts, token) do
+    {token_validator_fun, token_validator_opts} = opts[:token_validator]
+
+    case token_validator_fun.(token, token_validator_opts) do
+      {:ok, metadata} -> conn
+      {:error, error_desc} -> authenticate_failure(conn, opts, :invalid_token, error_desc)
+    end
   end
 
   defp authenticate_failure(conn,
@@ -110,7 +116,7 @@ defmodule APISexAuthBearer do
                             error_desc) do
     conn
     |> set_WWWAuthenticate_challenge(opts, error, error_desc)
-    |> Plug.Conn.put_status(:unauthorized)
+    |> Plug.Conn.put_status(error_to_status(:error))
     |> Plug.Conn.halt
   end
 
@@ -122,7 +128,7 @@ defmodule APISexAuthBearer do
                             _error,
                             _error_desc) do
     conn
-    |> Plug.Conn.put_status(:unauthorized)
+    |> Plug.Conn.put_status(error_to_status(:error))
     |> Plug.Conn.halt
   end
 
@@ -138,6 +144,10 @@ defmodule APISexAuthBearer do
   end
 
   defp authenticate_failure(conn, _opts, _error, _error_desc), do: conn
+
+  defp error_to_status(:invalid_request), do: 400
+  defp error_to_status(:invalid_token), do: 401
+  defp error_to_status(:insufficient_scope), do: 403
 
   defp set_WWWAuthenticate_challenge(conn, opts, error, error_desc) do
     wwwauthenticate_val = wwwauthenticate_params(opts, error, error_desc)
