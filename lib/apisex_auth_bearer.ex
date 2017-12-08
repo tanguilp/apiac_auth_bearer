@@ -1,7 +1,6 @@
 defmodule APISexAuthBearer do
   @behaviour Plug
 
-  @default_realm_name nil
   @default_wwwauthenticate_attributes [:realm, :scope, :error]
   @default_authorized_methods [:authorization_header]
 
@@ -13,10 +12,12 @@ defmodule APISexAuthBearer do
       allowed_methods: Keyword.get(opts, :authorized_methods, @default_authorized_methods),
       advertise_wwwauthenticate_header: Keyword.get(opts, :advertise_wwwauthenticate_header, true),
       wwwauthenticate_included_attributes: Keyword.get(opts, :wwwauthenticate_included_attributes, @default_wwwauthenticate_attributes),
-      realm: Keyword.get(opts, :realm, @default_realm_name),
+      realm: Keyword.get(opts, :realm, nil),
       halt_on_authentication_failure: Keyword.get(opts, :halt_on_authentication_failure, true),
-      scope: Keyword.get(opts, :scope, nil),
-      forward_token: Keyword.get(opts, :scope, false)
+      required_scopes: Keyword.get(opts, :scope, []),
+      forward_token: Keyword.get(opts, :scope, false),
+      client_attributes: Keyword.get(opts, :client_attributes, []),
+      subject_attributes: Keyword.get(opts, :subject_attributes, [])
     }
 
     #TODO: check scopes' well-formedness
@@ -102,9 +103,38 @@ defmodule APISexAuthBearer do
     {token_validator_fun, token_validator_opts} = opts[:token_validator]
 
     case token_validator_fun.(token, token_validator_opts) do
-      {:ok, metadata} -> conn
+      {:ok, %{"active": "true"} = token_data} -> check_scopes(conn, opts, token, token_data)
+      {:ok, %{"active": "false"}} -> authenticate_failure(conn, opts, :invalid_token, "Invalid Bearer token")
       {:error, error_desc} -> authenticate_failure(conn, opts, :invalid_token, error_desc)
     end
+  end
+
+  defp check_scopes(conn, %{required_scopes: required_scopes} = opts, token, token_data) do
+    case {required_scopes, token_data["scope"]} do
+      {[], _} -> authenticate_success(conn, opts, token, token_data)
+      {required_scopes, response_scopes} ->
+        req_scope_set = MapSet.new(required_scopes)
+        res_scope_set = MapSet.new(response_scopes)
+        if MapSet.subset?(req_scope_set, res_scope_set) do
+          authenticate_success(conn, opts, token, token_data)
+        else
+          authenticate_failure(conn, opts, :insufficient_scope, "Insufficient scope (in request: #{response_scopes}, required: #{required_scopes})")
+        end
+    end
+  end
+
+  defp authenticate_success(conn, opts, token, token_data) do
+    result = %APISex.Authn{
+      auth_scheme: __MODULE__,
+      client: token_data["client_id"],
+      client_attributes: Map.take(token_data, opts[:client_attributes]),
+      subject: token_data["sub"],
+      subject_attributes: Map.take(token_data, opts[:subject_attributes]),
+      realm: opts[:realm],
+      scopes: token_data["scope"]
+    }
+
+    Plug.Conn.put_private(conn, :apisex, result)
   end
 
   defp authenticate_failure(conn,
@@ -143,7 +173,9 @@ defmodule APISexAuthBearer do
     |> set_WWWAuthenticate_challenge(opts, error, error_desc)
   end
 
-  defp authenticate_failure(conn, _opts, _error, _error_desc), do: conn
+  defp authenticate_failure(conn, _opts, _error, _error_desc) do
+    conn
+  end
 
   defp error_to_status(:invalid_request), do: 400
   defp error_to_status(:invalid_token), do: 401
