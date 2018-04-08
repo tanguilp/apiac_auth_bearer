@@ -23,6 +23,7 @@ defmodule APISexAuthBearer.Mixfile do
       {:plug, "~> 1.0"},
       {:httpoison, "~> 0.13"},
       {:poison, "~> 3.1"},
+      {:tesla, "1.0.0-beta.1"},
       {:apisex, git: "https://github.com/sergeypopol/apisex.git", tag: "master"}
     ]
   end

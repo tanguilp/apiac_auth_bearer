@@ -1,15 +1,17 @@
 defmodule APISexAuthBearer.Validator.Introspect do
   @behaviour APISexAuthBearer.Validator
-  @introspect_request_headers [{"accept", "application/json"}, {"content-type", "application/x-www-form-urlencoded"}]
-  @mandatory_resp_headers {"content-type", "application/json"}
+  
 
   def validate(token, %{introspect_endpoint: introspect_endpoint} = validator_opts) do
+    http_client = Tesla.build_client({Tesla.Middleware.FormUrlencoded, nil} ++
+                                     validator_opts[:middlewares])
+
     body = [{"token", token}, {"token_type_hint", "access_token"}]
 
-    case HTTPoison.post(introspect_endpoint, body, @introspect_request_headers) do
-      {:ok, %HTTPoison.Response{status_code: 200, headers: headers} = response} ->
-        if @mandatory_resp_headers in headers do
-          parse_response(response, token, validator_opts)
+    case Tesla.post(http_client, introspect_endpoint, body, headers: %{"accept" => "application/json"}) do
+      {:ok, %Tesla.Env{status: 200, headers: headers, body: body}} ->
+        if {"content-type", "application/json"} in headers do
+          parse_response(body)
         else
           {:error, "Invalid content-type returned from introspection endpoint"}
         end
@@ -20,9 +22,10 @@ defmodule APISexAuthBearer.Validator.Introspect do
     end
   end
 
-  defp parse_response(%HTTPoison.Response{body: body}, token, validator_opts) do
+  defp parse_response(body) do
     case Poison.decode(body) do
-      {:ok, json} -> {:ok, json}
+      {:ok, %{"active": "true"} = response} -> {:ok, response}
+      {:ok, _} -> {:error, "Invalid token"}
       {:error, _} -> {:error, "Error decoding json returned by introspection endpoint"}
     end
   end

@@ -2,14 +2,14 @@ defmodule APISexAuthBearer do
   @behaviour Plug
 
   @default_wwwauthenticate_attributes [:realm, :scope, :error]
-  @default_authorized_methods [:authorization_header]
+  @default_supported_methods [:authorization_header]
 
   @spec init(Plug.opts) :: Plug.opts
   def init(opts) do
     opts = %{
       token_validator: Keyword.get(opts, :token_validator, nil),
       cache: Keyword.get(opts, :cache, nil),
-      allowed_methods: Keyword.get(opts, :authorized_methods, @default_authorized_methods),
+      supported_methods: Keyword.get(opts, :supported_methods, @default_supported_methods),
       advertise_wwwauthenticate_header: Keyword.get(opts, :advertise_wwwauthenticate_header, true),
       wwwauthenticate_included_attributes: Keyword.get(opts, :wwwauthenticate_included_attributes, @default_wwwauthenticate_attributes),
       realm: Keyword.get(opts, :realm, nil),
@@ -50,7 +50,7 @@ defmodule APISexAuthBearer do
   end
 
   defp call_parse_authorization_header(conn, opts) do
-    if Enum.member?(opts[:allowed_methods], :authorization_header) do
+    if Enum.member?(opts[:supported_methods], :authorization_header) do
       case Plug.Conn.get_req_header(conn, "authorization") do
         ["Bearer " <> token] -> {conn, token}
         _ -> :error
@@ -61,7 +61,7 @@ defmodule APISexAuthBearer do
   end
 
   defp call_parse_body_parameter(conn, opts) do
-    if Enum.member?(opts[:allowed_methods], :body_parameter) do
+    if Enum.member?(opts[:supported_methods], :body_parameter) do
     #TODO : conform with spec on
     #
     #   o  The content to be encoded in the entity-body MUST consist entirely
@@ -87,7 +87,7 @@ defmodule APISexAuthBearer do
   end
 
   defp call_parse_uri_parameter(conn, opts) do
-    if Enum.member?(opts[:allowed_methods], :uri_parameter) do
+    if Enum.member?(opts[:supported_methods], :uri_parameter) do
       conn = Plug.Conn.fetch_query_params(conn)
 
       case conn.query_params["access_token"] do
@@ -103,8 +103,7 @@ defmodule APISexAuthBearer do
     {token_validator_fun, token_validator_opts} = opts[:token_validator]
 
     case token_validator_fun.(token, token_validator_opts) do
-      {:ok, %{"active": "true"} = token_data} -> check_scopes(conn, opts, token, token_data)
-      {:ok, %{"active": "false"}} -> authenticate_failure(conn, opts, :invalid_token, "Invalid Bearer token")
+      {:ok, token_data} -> check_scopes(conn, opts, token, token_data)
       {:error, error_desc} -> authenticate_failure(conn, opts, :invalid_token, error_desc)
     end
   end
