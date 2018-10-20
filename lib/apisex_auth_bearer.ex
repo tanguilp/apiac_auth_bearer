@@ -1,227 +1,214 @@
 defmodule APISexAuthBearer do
   @behaviour Plug
+  @behaviour APISex.Authenticator
 
-  @default_wwwauthenticate_attributes [:realm, :scope, :error]
-  @default_supported_methods [:authorization_header]
+  @default_realm_name "default_realm"
 
-  @spec init(Plug.opts) :: Plug.opts
+  @doc """
+  Plug initialization callback
+  """
+
+  @impl true
   def init(opts) do
-    opts = %{
-      token_validator: Keyword.get(opts, :token_validator, nil),
-      cache: Keyword.get(opts, :cache, nil),
-      supported_methods: Keyword.get(opts, :supported_methods, @default_supported_methods),
-      advertise_wwwauthenticate_header: Keyword.get(opts, :advertise_wwwauthenticate_header, true),
-      wwwauthenticate_included_attributes: Keyword.get(opts, :wwwauthenticate_included_attributes, @default_wwwauthenticate_attributes),
-      realm: Keyword.get(opts, :realm, nil),
-      halt_on_authentication_failure: Keyword.get(opts, :halt_on_authentication_failure, true),
-      required_scopes: Keyword.get(opts, :scope, []),
-      forward_token: Keyword.get(opts, :scope, false),
-      client_attributes: Keyword.get(opts, :client_attributes, []),
-      subject_attributes: Keyword.get(opts, :subject_attributes, [])
-    }
+    realm = Keyword.get(opts, :realm, @default_realm_name)
 
-    #TODO: check scopes' well-formedness
+    if not is_binary(realm), do: raise "Invalid realm, must be a string"
 
-    # https://tools.ietf.org/html/rfc7235#section-2.2
-    #
-    #    For historical reasons, a sender MUST only generate the quoted-string
-    #    syntax.  Recipients might have to support both token and
-    #    quoted-string syntax for maximum interoperability with existing
-    #    clients that have been accepting both notations for a long time.
-    if Regex.match?(APISex.Utils.rfc7230_quotedstring_regex(), opts[:realm]) do
-      opts
-    else
-      raise "Invalid realm string (do not conform with RFC7230 quoted string)"
-    end
-  end
+    if not APISex.rfc7230_quotedstring?("\"#{realm}\""), do: raise "Invalid realm string (do not conform with RFC7230 quoted string)"
 
-  @spec call(Plug.Conn, Plug.opts) :: Plug.Conn
-  def call(conn, %{} = opts) do
-    case call_parse_authorization_header(conn, opts) do
-      {conn, token} ->  validate_token(conn, opts, token)
-      :error -> case call_parse_body_parameter(conn, opts) do
-        {conn, token} -> validate_token(conn, opts, token)
-        :error -> case  call_parse_uri_parameter(conn, opts) do
-          {conn, token} -> validate_token(conn, opts, token)
-          :error -> authenticate_failure(conn, opts, :invalid_request, "No Bearer token found in request")
+    required_scopes = OAuth2Utils.Scope.Set.new(Keyword.get(opts, :required_scopes, []))
+
+    Enum.each(
+      required_scopes,
+      fn scope -> if not OAuth2Utils.Scope.oauth2_scope?(scope) do
+        raise "Invalid scope in list required scopes"
         end
       end
-    end
+    )
+
+    %{
+      realm: realm,
+      bearer_validator: Keyword.get(opts, :bearer_validator, nil),
+      bearer_methods: Keyword.get(opts, :bearer_methods, [:header]),
+      set_authn_error_response: Keyword.get(opts, :set_authn_error_response, true),
+      halt_on_authn_failure: Keyword.get(opts, :halt_on_authn_failure, true),
+      required_scopes: required_scopes,
+      forward_bearer: Keyword.get(opts, :forward_bearer, false),
+      forward_metadata: Keyword.get(opts, :forward_metadata, [])
+    }
   end
 
-  defp call_parse_authorization_header(conn, opts) do
-    if Enum.member?(opts[:supported_methods], :authorization_header) do
-      case Plug.Conn.get_req_header(conn, "authorization") do
-        ["Bearer " <> token] -> {conn, token}
-        _ -> :error
-      end
+  @doc """
+  Plug pipeline callback
+  """
+
+  @impl true
+  @spec call(Plug.Conn, Plug.opts) :: Plug.Conn
+  def call(conn, opts) do
+    with {:ok, conn, bearer} <- extract_credentials(conn, opts),
+         {:ok, conn} <- validate_credentials(conn, bearer, opts) do
+      conn
     else
-      :error
-    end
-  end
-
-  defp call_parse_body_parameter(conn, opts) do
-    if Enum.member?(opts[:supported_methods], :body_parameter) do
-    #TODO : conform with spec on
-    #
-    #   o  The content to be encoded in the entity-body MUST consist entirely
-    #         of ASCII [USASCII] characters.
-    #
-      if ["application/x-www-form-urlencoded"] = Plug.Conn.get_req_header(conn, "content-type")
-        and conn.method in ["POST", "PUT", "PATCH"] do
-        conn = Plug.Parsers.call(conn,
-                                 Plug.Parsers.init(
-                                                   parsers: [:urlencoded],
-                                                   pass: ["application/x-www-form-urlencoded"]
-                                                 ))
-          case conn.body_params["access_token"] do
-            nil -> :error
-            token -> {conn, token}
+      {:error, conn, %APISex.Authenticator.Unauthorized{} = error} ->
+        conn =
+          if opts[:set_authn_error_response] do
+            set_error_response(conn, error, opts)
+          else
+            conn
           end
-      else
-        :error
-      end
-    else
-      :error
+
+        if opts[:halt_on_authn_failure] do
+          conn
+          |> Plug.Conn.send_resp()
+          |> Plug.Conn.halt()
+        else
+          conn
+        end
     end
   end
 
-  defp call_parse_uri_parameter(conn, opts) do
-    if Enum.member?(opts[:supported_methods], :uri_parameter) do
+  @doc """
+  `APISex.Authenticator` credential extractor callback
+  """
+
+  @impl true
+  def extract_credentials(conn, opts) do
+    case Enum.reduce_while(
+      opts[:supported_methods],
+      conn,
+      fn method, conn ->
+        case extract_bearer(conn, method) do
+          {:ok, _conn, _bearer} = ret ->
+            {:halt, ret}
+
+          {:error, conn} ->
+            {:cont, conn}
+        end
+      end
+    ) do
+      %Plug.Conn{} = conn ->
+        {:error, conn, %APISex.Authenticator.Unauthorized{
+          authenticator: __MODULE__,
+          reason: :no_bearer_found}}
+
+      {:ok, conn, bearer} ->
+        {:ok, conn, bearer}
+    end
+  end
+
+  defp extract_bearer(conn, :header) do
+    case Plug.Conn.get_req_header(conn, "authorization") do
+      # Only one header value should be returned
+      # (https://stackoverflow.com/questions/29282578/multiple-http-authorization-headers)
+      ["Bearer " <> untrimmed_bearer] ->
+        # rfc7235 syntax allows multiple spaces before the base64 token
+        bearer = String.trim_leading(untrimmed_bearer, " ")
+
+        if not APISex.rfc7235_token68?(bearer), do: raise "Invalid bearer token in authorization header"
+
+        {:ok, conn, bearer}
+
+      _ ->
+        {:error, conn}
+    end
+  end
+
+  defp extract_bearer(conn, :body) do
+    try do
+      plug_parser_opts = Plug.Parsers.init(parsers: [:urlencoded],
+                                           pass: ["application/x-www-form-urlencoded"])
+
+      conn = Plug.Parsers.call(conn, plug_parser_opts)
+
+      case conn.body_params["access_token"] do
+        nil ->
+          {:error, conn}
+
+        bearer ->
+          if not APISex.rfc7235_token68?(bearer), do: raise "Invalid bearer token in authorization header"
+
+          {:ok, conn, bearer}
+      end
+    rescue
+      UnsupportedMediaTypeError ->
+        {:error, conn}
+    end
+  end
+
+  defp extract_bearer(conn, :query) do
       conn = Plug.Conn.fetch_query_params(conn)
 
       case conn.query_params["access_token"] do
-        nil -> :error
-        token -> {conn, token}
+        nil ->
+          {:error, conn}
+
+        bearer ->
+          {:ok, conn, bearer}
       end
-    else
-      :error
-    end
   end
 
-  defp validate_token(conn, opts, token) do
-    {token_validator_fun, token_validator_opts} = opts[:token_validator]
+  @impl true
+  def validate_credentials(conn, bearer, opts) do
+    {bearer_validator_fun, bearer_validator_opts} = opts[:bearer_validator]
 
-    case token_validator_fun.(token, token_validator_opts) do
-      {:ok, token_data} -> check_scopes(conn, opts, token, token_data)
-      {:error, error_desc} -> authenticate_failure(conn, opts, :invalid_token, error_desc)
-    end
-  end
+    case bearer_validator_fun.(bearer, bearer_validator_opts) do
+      {:ok, bearer_data} ->
+        metadata = if opts[:forward_bearer], do: %{"bearer" => bearer}, else: %{}
 
-  defp check_scopes(conn, %{required_scopes: required_scopes} = opts, token, token_data) do
-    case {required_scopes, token_data["scope"]} do
-      {[], _} -> authenticate_success(conn, opts, token, token_data)
-      {required_scopes, response_scopes} ->
-        req_scope_set = MapSet.new(required_scopes)
-        res_scope_set = MapSet.new(response_scopes)
-        if MapSet.subset?(req_scope_set, res_scope_set) do
-          authenticate_success(conn, opts, token, token_data)
+        if OAuth2Utils.Scope.Set.subset?(opts[:required_scopes], OAuth2Utils.Scope.Set.new(bearer_data["scope"])) do
+          metadata =
+            Enum.reduce(
+              opts[:forward_metadata],
+              metadata,
+              fn attr ->
+                case bearer_data[attr] do
+                  nil ->
+                    metadata
+
+                  val ->
+                    Map.put_new(metadata, attr, val)
+                end
+              end
+            )
+
+          conn =
+            conn
+            |> Plug.Conn.put_private(:apisex_authenticator, __MODULE__)
+            |> Plug.Conn.put_private(:apisex_client, bearer_data["client"])
+            |> Plug.Conn.put_private(:apisex_metadata, metadata)
+            |> Plug.Conn.put_private(:apisex_realm, opts[:realm])
+
+          {:ok, conn}
         else
-          authenticate_failure(conn, opts, :insufficient_scope, "Insufficient scope (in request: #{response_scopes}, required: #{required_scopes})")
+          {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :insufficient_scope}}
         end
+
+      {:error, error} ->
+        {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__,
+          reason: error}}
     end
   end
 
-  defp authenticate_success(conn, opts, token, token_data) do
-    result = %APISex.Authn{
-      auth_scheme: __MODULE__,
-      client: token_data["client_id"],
-      client_attributes: Map.take(token_data, opts[:client_attributes]),
-      subject: token_data["sub"],
-      subject_attributes: Map.take(token_data, opts[:subject_attributes]),
-      realm: opts[:realm],
-      scopes: token_data["scope"]
-    }
+  @doc """
+  `APISex.Authenticator` error response callback
+  """
 
-    Plug.Conn.put_private(conn, :apisex, result)
-  end
+  @impl true
+  def set_error_response(conn, error, opts) do
+    {resp_status, error_map} =
+      case error do
+        %APISex.Authenticator.Unauthorized{reason: :insufficient_scope} ->
+          {:forbidden, %{"error" => "invalid_token",
+                         "realm" => opts[:realm]}}
 
-  defp authenticate_failure(conn,
-                            %{
-                              advertise_wwwauthenticate_header: true,
-                              halt_on_authentication_failure: true
-                            } = opts,
-                            error,
-                            error_desc) do
+        %APISex.Authenticator.Unauthorized{} ->
+          {:unauthorized, %{"error" => "insufficient_scope",
+                            "scope" => OAuth2Utils.Scope.Set.to_scope_param(opts[:required_scopes]),
+                            "realm" => opts[:realm]}}
+      end
+
     conn
-    |> set_WWWAuthenticate_challenge(opts, error, error_desc)
-    |> Plug.Conn.put_status(error_to_status(:error))
-    |> Plug.Conn.halt
-  end
-
-  defp authenticate_failure(conn,
-                            %{
-                              advertise_wwwauthenticate_header: false,
-                              halt_on_authentication_failure: true
-                            },
-                            _error,
-                            _error_desc) do
-    conn
-    |> Plug.Conn.put_status(error_to_status(:error))
-    |> Plug.Conn.halt
-  end
-
-  defp authenticate_failure(conn,
-                            %{
-                              advertise_wwwauthenticate_header: true,
-                              halt_on_authentication_failure: false
-                            } = opts,
-                            error,
-                            error_desc) do
-    conn
-    |> set_WWWAuthenticate_challenge(opts, error, error_desc)
-  end
-
-  defp authenticate_failure(conn, _opts, _error, _error_desc) do
-    conn
-  end
-
-  defp error_to_status(:invalid_request), do: 400
-  defp error_to_status(:invalid_token), do: 401
-  defp error_to_status(:insufficient_scope), do: 403
-
-  defp set_WWWAuthenticate_challenge(conn, opts, error, error_desc) do
-    wwwauthenticate_val = wwwauthenticate_params(opts, error, error_desc)
-
-    case Plug.Conn.get_resp_header(conn, "www-authenticate") do
-      [] -> Plug.Conn.put_resp_header(conn, "www-authenticate", wwwauthenticate_val)
-      [header_val|_] -> Plug.Conn.put_resp_header(conn, "www-authenticate", header_val <> ", " <> wwwauthenticate_val)
-    end
-  end
-
-  defp wwwauthenticate_params(%{
-                                wwwauthenticate_included_attributes: wwwauthenticate_included_attributes,
-                                realm: realm,
-                                scope: scope
-                                },
-                                error,
-                                error_desc) do
-  params = []
-
-  params = if Enum.member?(wwwauthenticate_included_attributes, :realm) do
-    params ++ ["realm=\"#{realm}\""]
-  else
-    params
-  end
-
-  params = if Enum.member?(wwwauthenticate_included_attributes, :scope) do
-    params ++ ["scope=\"#{Enum.join(scope, " ")}\""]
-  else
-    params
-  end
-
-  params = if Enum.member?(wwwauthenticate_included_attributes, :error) do
-    params ++ ["error=\"#{error}\""]
-  else
-    params
-  end
-
-  params = if Enum.member?(wwwauthenticate_included_attributes, :error_description) do
-    params ++ ["error_description=\"#{error_desc}\""]
-  else
-    params
-  end
-
-  "Bearer " <> Enum.join(params, ", ")
+    |> APISex.set_WWWauthenticate_challenge("Bearer", error_map)
+    |> Plug.Conn.resp(resp_status, "")
   end
 end

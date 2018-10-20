@@ -19,12 +19,14 @@ defmodule APISexAuthBearer.Mixfile do
 
   defp deps do
     [
-      {:cowboy, "~> 1.0.0"},
+      {:cowboy, "~> 2.0"},
       {:plug, "~> 1.0"},
-      {:httpoison, "~> 0.13"},
+      {:httpoison, "~> 1.0"},
       {:poison, "~> 3.1"},
-      {:tesla, "1.0.0-beta.1"},
-      {:apisex, git: "https://github.com/sergeypopol/apisex.git", tag: "master"}
+      {:tesla, "~> 1.1.0"},
+      {:apisex, github: "tanguilp/apisex", tag: "master"},
+      {:oauth2_utils, github: "tanguilp/oauth2_utils", tag: "master"},
+      {:ex_doc, "~> 0.19", only: :dev, runtime: false}
     ]
   end
 end
