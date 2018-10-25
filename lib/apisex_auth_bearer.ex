@@ -4,6 +4,8 @@ defmodule APISexAuthBearer do
 
   @default_realm_name "default_realm"
 
+  @type bearer :: String.t
+
   @doc """
   Plug initialization callback
   """
@@ -34,7 +36,8 @@ defmodule APISexAuthBearer do
       halt_on_authn_failure: Keyword.get(opts, :halt_on_authn_failure, true),
       required_scopes: required_scopes,
       forward_bearer: Keyword.get(opts, :forward_bearer, false),
-      forward_metadata: Keyword.get(opts, :forward_metadata, [])
+      forward_metadata: Keyword.get(opts, :forward_metadata, []),
+      cache: Keyword.get(opts, :cache, {APISex.Cache.NoCache, []})
     }
   end
 
@@ -149,43 +152,59 @@ defmodule APISexAuthBearer do
 
   @impl true
   def validate_credentials(conn, bearer, opts) do
-    {bearer_validator_fun, bearer_validator_opts} = opts[:bearer_validator]
+    {cache, cache_opts} = opts[:cache]
 
-    case bearer_validator_fun.(bearer, bearer_validator_opts) do
-      {:ok, bearer_data} ->
-        metadata = if opts[:forward_bearer], do: %{"bearer" => bearer}, else: %{}
+    case cache.get(bearer, cache_opts) do
+      bearer_data when not is_nil(bearer_data) ->
+        validate_bearer_data(conn, bearer, bearer_data, opts)
 
-        if OAuth2Utils.Scope.Set.subset?(opts[:required_scopes], OAuth2Utils.Scope.Set.new(bearer_data["scope"])) do
-          metadata =
-            Enum.reduce(
-              opts[:forward_metadata],
-              metadata,
-              fn attr ->
-                case bearer_data[attr] do
-                  nil ->
-                    metadata
+      # bearer is not in cache
+      nil ->
+        {bearer_validator, bearer_validator_opts} = opts[:bearer_validator]
 
-                  val ->
-                    Map.put_new(metadata, attr, val)
-                end
-              end
-            )
+        case bearer_validator.validate(bearer, bearer_validator_opts) do
+          {:ok, bearer_data} ->
+            cache.put(bearer, bearer_data, cache_opts)
 
-          conn =
-            conn
-            |> Plug.Conn.put_private(:apisex_authenticator, __MODULE__)
-            |> Plug.Conn.put_private(:apisex_client, bearer_data["client"])
-            |> Plug.Conn.put_private(:apisex_metadata, metadata)
-            |> Plug.Conn.put_private(:apisex_realm, opts[:realm])
+            validate_bearer_data(conn, bearer, bearer_data, opts)
 
-          {:ok, conn}
-        else
-          {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :insufficient_scope}}
+          {:error, error} ->
+            {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__,
+              reason: error}}
         end
+    end
+  end
 
-      {:error, error} ->
-        {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__,
-          reason: error}}
+  defp validate_bearer_data(conn, bearer, bearer_data, opts) do
+    metadata = if opts[:forward_bearer], do: %{"bearer" => bearer}, else: %{}
+
+    if OAuth2Utils.Scope.Set.subset?(opts[:required_scopes], OAuth2Utils.Scope.Set.new(bearer_data["scope"])) do
+      metadata =
+        Enum.reduce(
+          opts[:forward_metadata],
+          metadata,
+          fn attr ->
+            case bearer_data[attr] do
+              nil ->
+                metadata
+
+              val ->
+                # put_new/3 prevents from overwriting "bearer"
+                Map.put_new(metadata, attr, val)
+            end
+          end
+        )
+
+      conn =
+        conn
+        |> Plug.Conn.put_private(:apisex_authenticator, __MODULE__)
+        |> Plug.Conn.put_private(:apisex_client, bearer_data["client"])
+        |> Plug.Conn.put_private(:apisex_metadata, metadata)
+        |> Plug.Conn.put_private(:apisex_realm, opts[:realm])
+
+      {:ok, conn}
+    else
+      {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :insufficient_scope}}
     end
   end
 
