@@ -13,7 +13,7 @@ defmodule APISexAuthBearer.Mixfile do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :oauth2_metadata_updater]
     ]
   end
 
@@ -23,9 +23,11 @@ defmodule APISexAuthBearer.Mixfile do
       {:plug, "~> 1.0"},
       {:httpoison, "~> 1.0"},
       {:poison, "~> 3.1"},
-      {:tesla, "~> 1.1.0"},
+      {:tesla, "~> 1.2.0"},
+      {:hackney, "~> 1.0"}, # Tesla's adapter
       {:apisex, github: "tanguilp/apisex", tag: "master"},
       {:oauth2_utils, github: "tanguilp/oauth2_utils", tag: "master"},
+      {:oauth2_metadata_updater, github: "tanguilp/oauth2_metadata_updater", tag: "master"},
       {:ex_doc, "~> 0.19", only: :dev, runtime: false}
     ]
   end
