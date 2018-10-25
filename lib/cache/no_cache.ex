@@ -1,4 +1,4 @@
-defmodule NoCache do
+defmodule APISexAuthBearer.Cache.NoCache do
   @moduledoc """
   Default cache module - do not cache
 
