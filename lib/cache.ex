@@ -1,27 +1,30 @@
 defmodule APISexAuthBearer.Cache do
   @moduledoc """
   `APISexAuthBearer.Cache` behaviour specification
-
-  An `APISexAuthBearer.Validator` implements a `validate/2` function that take the
-  following parameters:
-  - the Bearer token (a `String.t`)
-  - validator-specific options
-
-  It returns `{:ok, attributes}` where `attributes` is a map containing the relevant token data
-  when the bearer token is valid. In particular, the validator is in charge of performing
-  the required security checks.
-  The function shall return `{:error, atom()}` when validation fails for any reason, where
-  `atom()` is the error reason.
   """
 
   @type opts :: Keyword.t
 
+  @doc """
+  Initializes the cache options
+
+  This function is called at compile-time when `APISexAuthBearer` is called in
+  a plug pipeline. Its result will be given to `put/3` and `get/2`
+  """
   @callback init_opts(opts) :: opts
 
+  @doc """
+  Stores the bearer's attributes in the cache
+  """
   @callback put(APISexAuthBearer.bearer,
                 APISexAuthBearer.Validator.response_attributes,
                 opts) :: no_return()
 
+  @doc """
+  Returns the bearer's attributes stored in the cache
+
+  Returns `nil` if the bearer was not found in the cache
+  """
   @callback get(APISexAuthBearer.bearer, opts)
     :: APISexAuthBearer.Validator.response_attributes | nil
 

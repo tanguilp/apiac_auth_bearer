@@ -1,4 +1,12 @@
 defmodule NoCache do
+  @moduledoc """
+  Default cache module - do not cache
+
+  Beware of using it in production environment with
+  `APISexAuthBearer.Validator.Introspect` as the target authorization server will receive
+  request for every API request
+  """
+
   @behaviour APISexAuthBearer.Cache
 
   @impl true
