@@ -91,7 +91,9 @@ defmodule APISexAuthBearer do
   - `cache`: a `{cache_module, cache_options}` tuple where `cache_module` is
   a module implementing the `APISexAuthBearer.Cache` behaviour and `cache_options`
   module-specific options that will be passed to the cache when called.
-  Defaults to `{APISex.Cache.NoCache, []}`
+  The cache expiration ttl can be set thanks to the `:ttl` option (which is set to 200
+  seconds by default).
+  Defaults to `{APISex.Cache.NoCache, [ttl: 200]}`
 
   ## Example
 
@@ -141,6 +143,9 @@ defmodule APISexAuthBearer do
 
     if opts[:bearer_validator] == nil, do: raise "Missing mandatory option `bearer_validator`"
 
+    {cache_module, cache_opts} = Keyword.get(opts, :cache, {APISex.Cache.NoCache, []})
+    cache_opts = Keyword.put_new(cache_opts, :ttl, 200)
+
     %{
       realm: realm,
       bearer_validator: Keyword.get(opts, :bearer_validator, nil),
@@ -150,7 +155,7 @@ defmodule APISexAuthBearer do
       required_scopes: required_scopes,
       forward_bearer: Keyword.get(opts, :forward_bearer, false),
       forward_metadata: Keyword.get(opts, :forward_metadata, []),
-      cache: Keyword.get(opts, :cache, {APISex.Cache.NoCache, []})
+      cache: {cache_module, cache_module.init(cache_opts)}
     }
   end
 

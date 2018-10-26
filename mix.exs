@@ -19,7 +19,6 @@ defmodule APISexAuthBearer.Mixfile do
 
   defp deps do
     [
-      {:cowboy, "~> 2.0"},
       {:plug, "~> 1.0"},
       {:httpoison, "~> 1.0"},
       {:poison, "~> 3.1"},
@@ -27,7 +26,7 @@ defmodule APISexAuthBearer.Mixfile do
       {:hackney, "~> 1.0"}, # Tesla's adapter
       {:apisex, github: "tanguilp/apisex", tag: "master"},
       {:oauth2_utils, github: "tanguilp/oauth2_utils", tag: "master"},
-      {:oauth2_metadata_updater, github: "tanguilp/oauth2_metadata_updater", tag: "master"},
+      {:oauth2_metadata_updater, github: "tanguilp/oauth2_metadata_updater", tag: "master", optional: true},
       {:ex_doc, "~> 0.19", only: :dev, runtime: false}
     ]
   end
