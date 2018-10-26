@@ -13,7 +13,7 @@ defmodule APISexAuthBearer.Mixfile do
 
   def application do
     [
-      extra_applications: [:logger, :oauth2_metadata_updater]
+      extra_applications: [:logger]
     ]
   end
 
