@@ -2,6 +2,117 @@ defmodule APISexAuthBearer do
   @behaviour Plug
   @behaviour APISex.Authenticator
 
+  @moduledoc """
+  An `APISex.Authenticator` plug for API authentication using the OAuth2 `Bearer` scheme
+
+  The OAuth2 `Bearer` scheme is documented in
+  [RFC6750 - The OAuth 2.0 Authorization Framework: Bearer Token Usage](https://tools.ietf.org/html/rfc6750)
+  and consists in sending an OAuth2 access token in the HTTP request. Any party
+  in possession of that token can use it on the API, hence its name: 'Bearer'.
+
+  ```http
+  GET /api/accounts HTTP/1.1
+  Host: example.com
+  Authorization: Bearer NLdtYEY8Y4Q09kKBUnsYy9mExGQnBy
+  Accept: */*
+  ```
+
+  That bearer token has been granted beforehand by an OAuth2 authorization server to the
+  client making the API request (typically through one of the 4
+  [RFC6749](https://tools.ietf.org/html/rfc6749) flows or one of the 3
+  [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) flows).
+
+  Note that according to the specification, the bearer can be sent:
+  - in the `Authorization` HTTP header
+  - in the request body (assuming the request has one)
+  - as a query parameter
+
+  The `bearer_methods` plug option allows to specify where to seek the bearer.
+
+  Bearer tokens are usually:
+  - opaque tokens, to be validated against the OAuth2 authorization server that has released it
+  - self-contained signed JWT tokens, that can be verified locally by the API
+
+  ## Validating the access token
+
+  This plug provides with the `APISexAuthBearer.Validator.Introspect` bearer validator,
+  that implements the only standard for bearer validation:
+  [RFC7662 - OAuth 2.0 Token Introspection](https://tools.ietf.org/html/rfc7662)
+
+  A validator must implement the `APISexAuthBearer.Validator` behaviour.
+
+  ## Caching
+
+  A bearer token may be used many times on an API in a short time-frame,
+  which is why caching is important
+  when using `APISexAuthBearer.Validator.Introspect` or a similar mechanism as a
+  back pressure mechanism for the authorization server. This plug comes with 4 caching
+  implementations:
+
+  | Caching implementation         | Repository | Use-case                                                                                                                                                    |
+  |--------------------------------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+  | APISexAuthBearer.Cache.NoCache | Built-in   | No caching, for testing purpose or when using a custom validator that doesn't require caching                                                               |
+  | APISexAuthBearer.Cache.ETSMock | Built-in   | Local cache in ETS table, for testing purpose, development environment, etc. Does not have a token expiration clean-up code: the cache will grow endlessly  |
+  | APISexAuthBearer-Cache-Cachex  | TBC        | Production ready cache, for a single instance or a small cluster of nodes                                                                                   |
+  | APISexAuthBearer-Cache-Riak    | TBC        | Production ready cache, for larger clusters of nodes                                                                                                        |
+
+  A cache implements the `APISexAuthBearer.Cache` behaviour.
+
+  ## Validation flow sequence diagram
+
+  ![SVG sequence diagram of the validation flow](success_flow.svg)
+
+  ## Plug options
+
+  - `realm`: a mandatory `String.t` that conforms to the HTTP quoted-string syntax, however without
+  the surrounding quotes (which will be added automatically when needed). Defaults to `default_realm`
+  - `bearer_validator`: a `{validator_module, validator_options}` tuple where `validator_module` is
+  a module implementing the `APISexAuthBearer.Validator` behaviour and `validator_options`
+  module-specific options that will be passed to the validator when called. No default
+  value, mandatory parameter
+  - `bearer_methods`: a list of methods that will be tried to extract the bearer token, among
+  `:header`, `:body` and `:query`. Methods will be tried in the list order.
+  Defaults to `[:header]`
+  - `set_authn_error_response`: if `true`, sets the error response accordingly to the standard:
+  changing the HTTP status code to `401` or `403` and setting the `WWW-Authenticate` value.
+  If false, does not change them. Defaults to `true`
+  - `halt_on_authn_failure`: if set to `true`, halts the connection and directly sends the
+  response when authentication fails. When set to `false`, does nothing and therefore allows
+  chaining several authenticators. Defaults to `true`
+  - `required_scopes`: a list of scopes required to access this API. Defaults to `[]`.
+  When the bearer's granted scope are
+  not sufficient, an HTTP 403 response is sent with the `insufficient_scope` RFC6750 error
+  - `forward_bearer`: if set to `true`, the bearer is saved in the `Plug.Conn` APISex
+  metadata (under the "bearer" key) and can be later be retrieved using `APISex.metadata/1`.
+  Defaults to `false`
+  - `forward_metadata`: in addition to the bearer's `client` and `subject`, list of the
+  validator's response to set in the APISex metadata.
+  For example: `["username", "aud"]`. Defaults to `[]`
+  - `cache`: a `{cache_module, cache_options}` tuple where `cache_module` is
+  a module implementing the `APISexAuthBearer.Cache` behaviour and `cache_options`
+  module-specific options that will be passed to the cache when called.
+  Defaults to `{APISex.Cache.NoCache, []}`
+
+  ## Example
+
+  ```elixir
+  Plug APISexAuthBearer, bearer_validator: {APISexAuthBearer,[
+                                                              issuer: "https://example.com/auth"
+                                                              tesla_middleware:[
+                                                              {Tesla.Middleware.BasicAuth, [username: "client_id_123", password: "WN2P3Ci+meSLtVipc1EZhbFm2oZyMgWIx/ygQhngFbo"]}
+                                                              ]
+                                                              ]},
+                          bearer_methods: [:query, :header],
+                          required_scopes: ["article:write", "comments:moderate"],
+                          forward_bearer: true,
+                          cache: {APISexAuthBearer-Cache-Cachex, #TODO}
+
+  ```
+
+  ## Security considerations
+
+  """
+
   @default_realm_name "default_realm"
 
   @type bearer :: String.t
@@ -27,6 +138,8 @@ defmodule APISexAuthBearer do
         end
       end
     )
+
+    if opts[:bearer_validator] == nil, do: raise "Missing mandatory option `bearer_validator`"
 
     %{
       realm: realm,
@@ -217,13 +330,13 @@ defmodule APISexAuthBearer do
     {resp_status, error_map} =
       case error do
         %APISex.Authenticator.Unauthorized{reason: :insufficient_scope} ->
-          {:forbidden, %{"error" => "invalid_token",
+          {:forbidden, %{"error" => "insufficient_scope",
+                         "scope" => OAuth2Utils.Scope.Set.to_scope_param(opts[:required_scopes]),
                          "realm" => opts[:realm]}}
 
         %APISex.Authenticator.Unauthorized{} ->
-          {:unauthorized, %{"error" => "insufficient_scope",
-                            "scope" => OAuth2Utils.Scope.Set.to_scope_param(opts[:required_scopes]),
-                            "realm" => opts[:realm]}}
+          {:unauthorized, %{"error" => "invalid_token",
+                         "realm" => opts[:realm]}}
       end
 
     conn
