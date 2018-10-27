@@ -2,6 +2,9 @@ defmodule APISexAuthBearer do
   @behaviour Plug
   @behaviour APISex.Authenticator
 
+  alias OAuth2Utils.Scope, as: Scope
+  alias OAuth2Utils.Scope.Set, as: ScopeSet
+
   @moduledoc """
   An `APISex.Authenticator` plug for API authentication using the OAuth2 `Bearer` scheme
 
@@ -53,7 +56,7 @@ defmodule APISexAuthBearer do
   |--------------------------------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
   | APISexAuthBearer.Cache.NoCache | Built-in   | No caching, for testing purpose or when using a custom validator that doesn't require caching                                                               |
   | APISexAuthBearer.Cache.ETSMock | Built-in   | Local cache in ETS table, for testing purpose, development environment, etc. Does not have a token expiration clean-up code: the cache will grow endlessly  |
-  | APISexAuthBearerCacheCachex  | [github: tanguilp/apisex_auth_bearer_cache_cachex](https://github.com/tanguilp/apisex_auth_bearer_cache_cachex) | Production ready cache, for a single instance or a small cluster of nodes                                                                                   |
+  | APISexAuthBearerCacheCachex  | [github](https://github.com/tanguilp/apisex_auth_bearer_cache_cachex) | Production ready cache, for a single instance or a small cluster of nodes                                                                                   |
   | APISexAuthBearerCacheRiak    | TBC        | Production ready cache, for larger clusters of nodes                                                                                                        |
 
   A cache implements the `APISexAuthBearer.Cache` behaviour.
@@ -131,11 +134,11 @@ defmodule APISexAuthBearer do
 
     if not APISex.rfc7230_quotedstring?("\"#{realm}\""), do: raise "Invalid realm string (do not conform with RFC7230 quoted string)"
 
-    required_scopes = OAuth2Utils.Scope.Set.new(Keyword.get(opts, :required_scopes, []))
+    required_scopes = ScopeSet.new(Keyword.get(opts, :required_scopes, []))
 
     Enum.each(
       required_scopes,
-      fn scope -> if not OAuth2Utils.Scope.oauth2_scope?(scope) do
+      fn scope -> if not Scope.oauth2_scope?(scope) do
         raise "Invalid scope in list required scopes"
         end
       end
@@ -296,7 +299,7 @@ defmodule APISexAuthBearer do
   defp validate_bearer_data(conn, bearer, bearer_data, opts) do
     metadata = if opts[:forward_bearer], do: %{"bearer" => bearer}, else: %{}
 
-    if OAuth2Utils.Scope.Set.subset?(opts[:required_scopes], OAuth2Utils.Scope.Set.new(bearer_data["scope"])) do
+    if ScopeSet.subset?(opts[:required_scopes], ScopeSet.new(bearer_data["scope"])) do
       metadata =
         Enum.reduce(
           opts[:forward_metadata],
@@ -336,7 +339,7 @@ defmodule APISexAuthBearer do
       case error do
         %APISex.Authenticator.Unauthorized{reason: :insufficient_scope} ->
           {:forbidden, %{"error" => "insufficient_scope",
-                         "scope" => OAuth2Utils.Scope.Set.to_scope_param(opts[:required_scopes]),
+                         "scope" => ScopeSet.to_scope_param(opts[:required_scopes]),
                          "realm" => opts[:realm]}}
 
         %APISex.Authenticator.Unauthorized{} ->
