@@ -94,8 +94,10 @@ defmodule APISexAuthBearer do
   - `cache`: a `{cache_module, cache_options}` tuple where `cache_module` is
   a module implementing the `APISexAuthBearer.Cache` behaviour and `cache_options`
   module-specific options that will be passed to the cache when called.
-  The cache expiration ttl can be set thanks to the `:ttl` option (which is set to 200
-  seconds by default).
+  The cached entry expiration ttl can be set thanks to the `:ttl` option. It is set to
+  200 seconds by default, but is shortened when the bearer's lifetime is less than 200
+  seconds (as indicated by its expiration timestamp of the `"exp"` member of bearer
+  metadata returned by the validator)
   Defaults to `{APISex.Cache.NoCache, [ttl: 200]}`
 
   ## Example
@@ -285,7 +287,20 @@ defmodule APISexAuthBearer do
 
         case bearer_validator.validate(bearer, bearer_validator_opts) do
           {:ok, bearer_data} ->
-            cache.put(bearer, bearer_data, cache_opts)
+            try do
+              # let's lower the ttl when the "exp" member of the bearer's data
+              # says the bearer expires before the current cache ttl
+              exp = String.to_integer(bearer_data["exp"])
+
+              if exp - :os.system_time(:second) < cache_opts[:ttl] do
+                cache.put(bearer, bearer_data, Map.put(cache_opts, :ttl, :os.system_time(:second)))
+              else
+                cache.put(bearer, bearer_data, cache_opts)
+              end
+            rescue
+              _ ->
+                cache.put(bearer, bearer_data, cache_opts)
+            end
 
             validate_bearer_data(conn, bearer, bearer_data, opts)
 
