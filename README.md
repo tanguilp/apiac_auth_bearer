@@ -113,12 +113,13 @@ in case of authentication failure:
 ## Example
 
 ```elixir
-Plug APISexAuthBearer, bearer_validator: {APISexAuthBearer,[
-                                                            issuer: "https://example.com/auth"
-                                                            tesla_middleware:[
-                                                            {Tesla.Middleware.BasicAuth, [username: "client_id_123", password: "WN2P3Ci+meSLtVipc1EZhbFm2oZyMgWIx/ygQhngFbo"]}
-                                                            ]
-                                                            ]},
+Plug APISexAuthBearer, bearer_validator: {APISexAuthBearer.Validator.Introspect,
+					  [
+                                            issuer: "https://example.com/auth"
+                                            tesla_middleware:[
+                                              {Tesla.Middleware.BasicAuth, [username: "client_id_123", password: "WN2P3Ci+meSLtVipc1EZhbFm2oZyMgWIx/ygQhngFbo"]}
+                                              ]
+                                          ]},
                         bearer_extract_methods: [:header, :body],
                         required_scopes: ["article:write", "comments:moderate"],
                         forward_bearer: true,
