@@ -57,7 +57,7 @@ A cache implements the `APISexAuthBearer.Cache` behaviour.
 
 ## Validation flow sequence diagram
 
-![SVG sequence diagram of the validation flow](success_flow.svg)
+![SVG sequence diagram of the validation flow](doc/success_flow.svg)
 
 ## Plug options
 
