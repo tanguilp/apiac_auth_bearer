@@ -19,6 +19,7 @@ defmodule APISexAuthBearer.Validator do
   - `"scope"`: list of the bearer's scopes (list of strings)
   - `"client_id"`: the client's id (string)
   - `"sub"`: the subject (string)
+  - `"aud"`: the audience(s) (string or list of strings)
   """
 
   @type opts :: Keyword.t
