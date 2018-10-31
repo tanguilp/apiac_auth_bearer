@@ -37,7 +37,7 @@ defmodule APISexAuthBearer.Validator.Introspect do
          {:ok, parsed_body} <- Poison.decode(resp_body)
     do
       case parsed_body do
-        %{"active" => "true"} ->
+        %{"active" => true} ->
           {:ok, parsed_body}
 
         _ ->

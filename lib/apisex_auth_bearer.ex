@@ -30,7 +30,7 @@ defmodule APISexAuthBearer do
   - in the request body (assuming the request has one)
   - as a query parameter
 
-  The `bearer_methods` plug option allows to specify where to seek the bearer.
+  The `bearer_extract_methods` plug option allows to specify where to seek the bearer.
 
   Bearer tokens are usually:
   - opaque tokens, to be validated against the OAuth2 authorization server that has released it
@@ -73,7 +73,7 @@ defmodule APISexAuthBearer do
   a module implementing the `APISexAuthBearer.Validator` behaviour and `validator_options`
   module-specific options that will be passed to the validator when called. No default
   value, mandatory parameter
-  - `bearer_methods`: a list of methods that will be tried to extract the bearer token, among
+  - `bearer_extract_methods`: a list of methods that will be tried to extract the bearer token, among
   `:header`, `:body` and `:query`. Methods will be tried in the list order.
   Defaults to `[:header]`
   - `set_authn_error_response`: if `true`, sets the error response accordingly to the standard:
@@ -98,7 +98,7 @@ defmodule APISexAuthBearer do
   200 seconds by default, but is shortened when the bearer's lifetime is less than 200
   seconds (as indicated by its expiration timestamp of the `"exp"` member of bearer
   metadata returned by the validator)
-  Defaults to `{APISex.Cache.NoCache, [ttl: 200]}`
+  Defaults to `{APISexAuthBearer.Cache.NoCache, [ttl: 200]}`
 
   ## Example
 
@@ -109,7 +109,7 @@ defmodule APISexAuthBearer do
                                                               {Tesla.Middleware.BasicAuth, [username: "client_id_123", password: "WN2P3Ci+meSLtVipc1EZhbFm2oZyMgWIx/ygQhngFbo"]}
                                                               ]
                                                               ]},
-                          bearer_methods: [:query, :header],
+                          bearer_extract_methods: [:query, :header],
                           required_scopes: ["article:write", "comments:moderate"],
                           forward_bearer: true,
                           cache: {APISexAuthBearer-Cache-Cachex, #TODO}
@@ -148,19 +148,19 @@ defmodule APISexAuthBearer do
 
     if opts[:bearer_validator] == nil, do: raise "Missing mandatory option `bearer_validator`"
 
-    {cache_module, cache_opts} = Keyword.get(opts, :cache, {APISex.Cache.NoCache, []})
+    {cache_module, cache_opts} = Keyword.get(opts, :cache, {APISexAuthBearer.Cache.NoCache, []})
     cache_opts = Keyword.put_new(cache_opts, :ttl, 200)
 
     %{
       realm: realm,
       bearer_validator: Keyword.get(opts, :bearer_validator, nil),
-      bearer_methods: Keyword.get(opts, :bearer_methods, [:header]),
+      bearer_extract_methods: Keyword.get(opts, :bearer_extract_methods, [:header]),
       set_authn_error_response: Keyword.get(opts, :set_authn_error_response, true),
       halt_on_authn_failure: Keyword.get(opts, :halt_on_authn_failure, true),
       required_scopes: required_scopes,
       forward_bearer: Keyword.get(opts, :forward_bearer, false),
       forward_metadata: Keyword.get(opts, :forward_metadata, []),
-      cache: {cache_module, cache_module.init(cache_opts)}
+      cache: {cache_module, cache_module.init_opts(cache_opts)}
     }
   end
 
@@ -200,7 +200,7 @@ defmodule APISexAuthBearer do
   @impl true
   def extract_credentials(conn, opts) do
     case Enum.reduce_while(
-      opts[:supported_methods],
+      opts[:bearer_extract_methods],
       conn,
       fn method, conn ->
         case extract_bearer(conn, method) do
@@ -319,7 +319,7 @@ defmodule APISexAuthBearer do
         Enum.reduce(
           opts[:forward_metadata],
           metadata,
-          fn attr ->
+          fn attr, metadata ->
             case bearer_data[attr] do
               nil ->
                 metadata
@@ -334,7 +334,8 @@ defmodule APISexAuthBearer do
       conn =
         conn
         |> Plug.Conn.put_private(:apisex_authenticator, __MODULE__)
-        |> Plug.Conn.put_private(:apisex_client, bearer_data["client"])
+        |> Plug.Conn.put_private(:apisex_client, bearer_data["client_id"])
+        |> Plug.Conn.put_private(:apisex_subject, bearer_data["sub"])
         |> Plug.Conn.put_private(:apisex_metadata, metadata)
         |> Plug.Conn.put_private(:apisex_realm, opts[:realm])
 

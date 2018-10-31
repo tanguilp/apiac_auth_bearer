@@ -6,10 +6,10 @@ defmodule APISexAuthBearer.Validator.Identity do
   """
 
   @doc """
-  Returns data passed as the first parameter, without altering it in any way
+  Returns data passed as the `:response` member of the `opts` parameter
   """
   @impl true
-  def validate(data, _opts) do
-    data
+  def validate(_bearer, opts) do
+    opts[:response]
   end
 end
