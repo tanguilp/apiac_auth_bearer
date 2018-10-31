@@ -89,7 +89,8 @@ defmodule APISexAuthBearer do
   metadata (under the "bearer" key) and can be later be retrieved using `APISex.metadata/1`.
   Defaults to `false`
   - `forward_metadata`: in addition to the bearer's `client` and `subject`, list of the
-  validator's response to set in the APISex metadata.
+  validator's response to set in the APISex metadata, or the `:all` atom to forward all
+  of the response's data.
   For example: `["username", "aud"]`. Defaults to `[]`
   - `cache`: a `{cache_module, cache_options}` tuple where `cache_module` is
   a module implementing the `APISexAuthBearer.Cache` behaviour and `cache_options`
@@ -316,20 +317,26 @@ defmodule APISexAuthBearer do
 
     if ScopeSet.subset?(opts[:required_scopes], ScopeSet.new(bearer_data["scope"])) do
       metadata =
-        Enum.reduce(
-          opts[:forward_metadata],
-          metadata,
-          fn attr, metadata ->
-            case bearer_data[attr] do
-              nil ->
-                metadata
+        case opts[:forward_metadata] do
+          :all ->
+            Map.merge(bearer_data, metadata)
 
-              val ->
-                # put_new/3 prevents from overwriting "bearer"
-                Map.put_new(metadata, attr, val)
-            end
-          end
-        )
+          attrs when is_list(attrs) ->
+            Enum.reduce(
+              attrs,
+              metadata,
+              fn attr, metadata ->
+                case bearer_data[attr] do
+                  nil ->
+                    metadata
+
+                  val ->
+                    # put_new/3 prevents from overwriting "bearer"
+                    Map.put_new(metadata, attr, val)
+                end
+              end
+            )
+        end
 
       conn =
         conn
