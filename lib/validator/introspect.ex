@@ -15,6 +15,13 @@ defmodule APISexAuthBearer.Validator.Introspect do
   - `tesla_middlewares`: a list of [`Tesla.Middleware`s](https://hexdocs.pm/tesla/Tesla.Middleware.html#content)
   that will sequentially be called before requesting the introspection endpoint.
   Use it to authenticate to the OAuth2 authorization server.
+
+  ## OAuth2MetadataUpdater
+  
+  When using the `issueruri` option, make sure to include the `OAuth2MetadataUpdater`
+  library in the list of your dependencies, as the process or fetching metadata
+  information (including the `introspection_endpoint` parameter) is implemented
+  in that library and not in this one.
   """
 
   @impl true
