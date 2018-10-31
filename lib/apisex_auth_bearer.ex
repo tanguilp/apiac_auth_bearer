@@ -92,6 +92,7 @@ defmodule APISexAuthBearer do
   validator's response to set in the APISex metadata, or the `:all` atom to forward all
   of the response's data.
   For example: `["username", "aud"]`. Defaults to `[]`
+  - `resource_server_name`: 
   - `cache`: a `{cache_module, cache_options}` tuple where `cache_module` is
   a module implementing the `APISexAuthBearer.Cache` behaviour and `cache_options`
   module-specific options that will be passed to the cache when called.
@@ -100,6 +101,17 @@ defmodule APISexAuthBearer do
   seconds (as indicated by its expiration timestamp of the `"exp"` member of bearer
   metadata returned by the validator)
   Defaults to `{APISexAuthBearer.Cache.NoCache, [ttl: 200]}`
+
+  ## Error responses
+
+  This plug, conforming to RFC6750, responds with the following status and parameters
+  in case of authentication failure:
+
+  | Error                                   | HTTP status | Included WWW-Authenticate parameters |
+  |-----------------------------------------|:-----------:|--------------------------------------|
+  | No bearer token found                   | 401         | - realm                              |
+  | Invalid bearer                          | 401         | - realm<br>- error                   |
+  | Bearer doesn't have the required scopes | 403         | - realm<br>- error<br>- scope        |
 
   ## Example
 
@@ -110,14 +122,77 @@ defmodule APISexAuthBearer do
                                                               {Tesla.Middleware.BasicAuth, [username: "client_id_123", password: "WN2P3Ci+meSLtVipc1EZhbFm2oZyMgWIx/ygQhngFbo"]}
                                                               ]
                                                               ]},
-                          bearer_extract_methods: [:query, :header],
+                          bearer_extract_methods: [:header, :body],
                           required_scopes: ["article:write", "comments:moderate"],
                           forward_bearer: true,
-                          cache: {APISexAuthBearer-Cache-Cachex, #TODO}
+                          cache: {APISexAuthBearerCacheCachex, []}
 
   ```
 
   ## Security considerations
+
+  ### HTTPS
+  As the bearer token is sent in an HTTP header, use of HTTPS is **mandatory**
+  (but however not verfified by this Plug).
+
+  ### Bearer methods
+  As stated by RFC6750, section 2:
+
+  >  This section defines three methods of sending bearer access tokens in
+  >  resource requests to resource servers.  Clients **MUST NOT** use more
+  >  than one method to transmit the token in each request.
+
+  This plug does not check whether several methods are used or not. It will
+  only deal with the first bearer (valid or not) found following the order
+  of the `bearer_extract_methods`.
+
+  ### Form-Encoded Body Parameter
+  RFC6750, section 2.2, demands that the following conditions are met for
+  form-encoded body bearer access token:
+
+  > o  The HTTP request entity-header includes the "Content-Type" header
+  >    field set to "application/x-www-form-urlencoded".
+  >
+  > o  The entity-body follows the encoding requirements of the
+  >    "application/x-www-form-urlencoded" content-type as defined by
+  >    HTML 4.01 [W3C.REC-html401-19991224].
+  >
+  > o  The HTTP request entity-body is single-part.
+  >
+  > o  The content to be encoded in the entity-body MUST consist entirely
+  >    of ASCII [USASCII] characters.
+  >
+  > o  The HTTP request method is one for which the request-body has
+  >    defined semantics.  In particular, this means that the "GET"
+  >    method MUST NOT be used.
+
+  This plug, however:
+  - doesn't verify that the HTTP request entity-body is single-part
+  - the content is entirely US-ASCCI (the plug parser checks that it
+  is [utf8](https://github.com/elixir-plug/plug/blob/master/lib/plug/parsers/urlencoded.ex#L31)
+
+  ### Audience
+  RFC6750, section 5.2, states that:
+
+  > To deal with token redirect, it is important for the authorization
+  > server to include the identity of the intended recipients (the
+  > audience), typically a single resource server (or a list of resource
+  > servers), in the token.  Restricting the use of the token to a
+  > specific scope is also RECOMMENDED.
+
+  Consider implementing it using the `resource_server_name` parameter.
+
+  ### URI Query Parameter
+  According to RFC6750, section 2.3,:
+
+  > Clients using the URI Query Parameter method SHOULD also send a
+  > Cache-Control header containing the "no-store" option.  Server
+  > success (2XX status) responses to these requests SHOULD contain a
+  > Cache-Control header with the "private" option.
+
+  This plug does set the `cache-control` to `private` when such a method
+  is used. Beware, however, of not overwriting it later unless you
+  know what you're doing.
 
   """
 
@@ -231,9 +306,11 @@ defmodule APISexAuthBearer do
         # rfc7235 syntax allows multiple spaces before the base64 token
         bearer = String.trim_leading(untrimmed_bearer, " ")
 
-        if not APISex.rfc7235_token68?(bearer), do: raise "Invalid bearer token in authorization header"
-
-        {:ok, conn, bearer}
+        if APISex.rfc7235_token68?(bearer) do
+          {:ok, conn, bearer}
+        else
+          {:error, :invalid_bearer_format}
+        end
 
       _ ->
         {:error, conn}
@@ -252,7 +329,11 @@ defmodule APISexAuthBearer do
           {:error, conn}
 
         bearer ->
-          if not APISex.rfc7235_token68?(bearer), do: raise "Invalid bearer token in authorization header"
+          if APISex.rfc7235_token68?(bearer) do
+            {:ok, conn, bearer}
+          else
+            {:error, :invalid_bearer_format}
+          end
 
           {:ok, conn, bearer}
       end
@@ -270,7 +351,19 @@ defmodule APISexAuthBearer do
           {:error, conn}
 
         bearer ->
-          {:ok, conn, bearer}
+          if APISex.rfc7235_token68?(bearer) do
+            #RFC6750 - section 2.3:
+            #  Clients using the URI Query Parameter method SHOULD also send a
+            #  Cache-Control header containing the "no-store" option.  Server
+            #  success (2XX status) responses to these requests SHOULD contain a
+            #  Cache-Control header with the "private" option.
+
+            conn = Plug.Conn.put_resp_header(conn, "cache-control", "private")
+
+            {:ok, conn, bearer}
+          else
+            {:error, :invalid_bearer_format}
+          end
       end
   end
 
@@ -360,6 +453,9 @@ defmodule APISexAuthBearer do
   def set_error_response(conn, error, opts) do
     {resp_status, error_map} =
       case error do
+        %APISex.Authenticator.Unauthorized{reason: :no_bearer_found} ->
+          {:unauthorized, %{"realm" => opts[:realm]}}
+
         %APISex.Authenticator.Unauthorized{reason: :insufficient_scope} ->
           {:forbidden, %{"error" => "insufficient_scope",
                          "scope" => ScopeSet.to_scope_param(opts[:required_scopes]),

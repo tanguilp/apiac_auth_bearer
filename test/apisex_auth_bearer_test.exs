@@ -50,6 +50,24 @@ defmodule APISexAuthBearerTest do
     ]
   end
 
+  test "no bearer, check error response" do
+    opts = APISexAuthBearer.init([
+      realm: "realm9",
+      bearer_validator: {APISexAuthBearer.Validator.Identity, []}
+    ])
+
+    conn =
+      conn(:get, "/")
+      |> APISexAuthBearer.call(opts)
+
+    assert conn.status == 401
+    assert conn.halted
+    refute APISex.authenticated?(conn) == true
+    assert APISex.client(conn) == nil
+    assert APISex.subject(conn) == nil
+    assert Plug.Conn.get_resp_header(conn, "www-authenticate") == ["Bearer realm=\"realm9\""]
+  end
+
   test "a bearer in the body can be retreived and validated" do
     opts = APISexAuthBearer.init([
       bearer_validator: {APISexAuthBearer.Validator.Identity,
