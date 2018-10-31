@@ -53,11 +53,11 @@ defmodule APISexAuthBearer do
   implementations:
 
   | Caching implementation         | Repository | Use-case                                                                                                                                                    |
-  |--------------------------------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+  |--------------------------------|:----------:|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
   | APISexAuthBearer.Cache.NoCache | Built-in   | No caching, for testing purpose or when using a custom validator that doesn't require caching                                                               |
   | APISexAuthBearer.Cache.ETSMock | Built-in   | Local cache in ETS table, for testing purpose, development environment, etc. Does not have a token expiration clean-up code: the cache will grow endlessly  |
   | APISexAuthBearerCacheCachex  | [github](https://github.com/tanguilp/apisex_auth_bearer_cache_cachex) | Production ready cache, for a single instance or a small cluster of nodes                                                                                   |
-  | APISexAuthBearerCacheRiak    | TBC        | Production ready cache, for larger clusters of nodes                                                                                                        |
+  | APISexAuthBearerCacheRiak    | Work in progress | Production ready cache, for larger clusters of nodes                                                                                                        |
 
   A cache implements the `APISexAuthBearer.Cache` behaviour.
 
