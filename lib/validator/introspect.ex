@@ -32,6 +32,7 @@ defmodule APISexAuthBearer.Validator.Introspect do
     req_body = [{"token", bearer}, {"token_type_hint", "access_token"}]
 
     with {:ok, introspection_endpoint} <- introspection_endpoint(validator_opts),
+         :ok <- https?(introspection_endpoint),
          {:ok, %Tesla.Env{status: 200, headers: headers, body: resp_body}} <- Tesla.post(http_client, introspection_endpoint, req_body),
          :ok <- valid_content_type?(headers),
          {:ok, parsed_body} <- Poison.decode(resp_body)
@@ -81,6 +82,16 @@ defmodule APISexAuthBearer.Validator.Introspect do
       else
         {:error, :no_introspection_endpoint}
       end
+    end
+  end
+
+  defp https?(introspection_endpoint) do
+    case URI.parse(introspection_endpoint) do
+      %URI{scheme: "https"} ->
+        :ok
+
+      _ ->
+        {:error, :invalid_scheme_for_introspection_endpoint}
     end
   end
 
