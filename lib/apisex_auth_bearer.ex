@@ -92,7 +92,10 @@ defmodule APISexAuthBearer do
   validator's response to set in the APISex metadata, or the `:all` atom to forward all
   of the response's data.
   For example: `["username", "aud"]`. Defaults to `[]`
-  - `resource_server_name`: 
+  - `resource_server_name`: the name of the resource server as a String, to be
+  checked against the `aud` attribute returned by the validator. This is an optional
+  security mecanism. See the security consideration sections. Defaults to `nil`, i.e.
+  no check of this parameter
   - `cache`: a `{cache_module, cache_options}` tuple where `cache_module` is
   a module implementing the `APISexAuthBearer.Cache` behaviour and `cache_options`
   module-specific options that will be passed to the cache when called.
@@ -125,6 +128,7 @@ defmodule APISexAuthBearer do
                           bearer_extract_methods: [:header, :body],
                           required_scopes: ["article:write", "comments:moderate"],
                           forward_bearer: true,
+                          resource_server_name: "https://example.com/api/data"
                           cache: {APISexAuthBearerCacheCachex, []}
 
   ```
@@ -408,7 +412,9 @@ defmodule APISexAuthBearer do
   defp validate_bearer_data(conn, bearer, bearer_data, opts) do
     metadata = if opts[:forward_bearer], do: %{"bearer" => bearer}, else: %{}
 
-    if ScopeSet.subset?(opts[:required_scopes], ScopeSet.new(bearer_data["scope"])) do
+    with :ok <- verify_scopes(conn, bearer_data, opts),
+         :ok <- verify_audience(conn, bearer_data, opts)
+    do
       metadata =
         case opts[:forward_metadata] do
           :all ->
@@ -440,8 +446,39 @@ defmodule APISexAuthBearer do
         |> Plug.Conn.put_private(:apisex_realm, opts[:realm])
 
       {:ok, conn}
+    end
+  end
+
+  defp verify_scopes(conn, bearer_data, opts) do
+    if ScopeSet.subset?(opts[:required_scopes], ScopeSet.new(bearer_data["scope"])) do
+      :ok
     else
       {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :insufficient_scope}}
+    end
+  end
+
+  defp verify_audience(conn, bearer_data, opts) do
+    if opts[:resource_server_name] != nil do
+      case bearer_data["aud"] do
+        aud when is_binary(aud) ->
+          if opts[:resource_server_name] == aud do
+            :ok
+          else
+            {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :invalid_audience}}
+          end
+
+        aud_list when is_list(aud_list) ->
+          if opts[:resource_server_name] in aud_list do
+            :ok
+          else
+            {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :invalid_audience}}
+          end
+
+        _ ->
+          {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :invalid_audience}}
+      end
+    else
+      :ok
     end
   end
 
