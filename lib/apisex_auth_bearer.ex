@@ -378,6 +378,8 @@ defmodule APISexAuthBearer do
 
     case cache.get(bearer, cache_opts) do
       bearer_data when not is_nil(bearer_data) ->
+        # TODO: refactor as there is no need to revalidate,
+        # cached bearers have already been validated
         validate_bearer_data(conn, bearer, bearer_data, opts)
 
       # bearer is not in cache
@@ -391,11 +393,9 @@ defmodule APISexAuthBearer do
               # says the bearer expires before the current cache ttl
               exp = String.to_integer(bearer_data["exp"])
 
-              if exp - :os.system_time(:second) < cache_opts[:ttl] do
-                cache.put(bearer, bearer_data, Map.put(cache_opts, :ttl, :os.system_time(:second)))
-              else
-                cache.put(bearer, bearer_data, cache_opts)
-              end
+              ttl = min(cache_opts[:ttl], exp - :os.system_time(:second))
+
+              cache.put(bearer, bearer_data, Map.put(cache_opts, :ttl, ttl))
             rescue
               _ ->
                 cache.put(bearer, bearer_data, cache_opts)
