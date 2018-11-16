@@ -22,12 +22,11 @@ defmodule APISexAuthBearer.Validator do
   - `"aud"`: the audience(s) (string or list of strings)
   """
 
-  @type opts :: Keyword.t
+  @type opts :: Keyword.t()
 
   @type response_attributes :: %{
-    optional(String.t) => any()
-  }
+          optional(String.t()) => any()
+        }
 
-  @callback validate(binary(), opts) ::
-    {:ok, __MODULE__.response_attributes} | {:error, atom()}
+  @callback validate(binary(), opts) :: {:ok, __MODULE__.response_attributes()} | {:error, atom()}
 end

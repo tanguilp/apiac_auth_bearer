@@ -61,21 +61,22 @@ A cache implements the `APISexAuthBearer.Cache` behaviour.
 
 ## Plug options
 
-- `realm`: a mandatory `String.t` that conforms to the HTTP quoted-string syntax, however without
-the surrounding quotes (which will be added automatically when needed). Defaults to `default_realm`
-- `bearer_validator`: a `{validator_module, validator_options}` tuple where `validator_module` is
+- `realm`: a mandatory `String.t` that conforms to the HTTP quoted-string syntax,
+however without
+the surrounding quotes (which will be added automatically when needed).
+Defaults to `default_realm`
+- `bearer_validator`: a `{validator_module, validator_options}` tuple where
+`validator_module` is
 a module implementing the `APISexAuthBearer.Validator` behaviour and `validator_options`
 module-specific options that will be passed to the validator when called. No default
 value, mandatory parameter
-- `bearer_extract_methods`: a list of methods that will be tried to extract the bearer token, among
-`:header`, `:body` and `:query`. Methods will be tried in the list order.
+- `bearer_extract_methods`: a list of methods that will be tried to extract the bearer
+token, among `:header`, `:body` and `:query`. Methods will be tried in the list order.
 Defaults to `[:header]`
-- `set_authn_error_response`: if `true`, sets the error response accordingly to the standard:
-changing the HTTP status code to `401` or `403` and setting the `WWW-Authenticate` value.
-If false, does not change them. Defaults to `true`
-- `halt_on_authn_failure`: if set to `true`, halts the connection and directly sends the
-response when authentication fails. When set to `false`, does nothing and therefore allows
-chaining several authenticators. Defaults to `true`
+- `set_error_response`: function called when authentication failed. Defaults to
+`APISexAuthBearer.send_error_response/3`
+- `error_response_verbosity`: one of `:debug`, `:normal` or `:minimal`.
+Defaults to `:normal`
 - `required_scopes`: a list of scopes required to access this API. Defaults to `[]`.
 When the bearer's granted scope are
 not sufficient, an HTTP 403 response is sent with the `insufficient_scope` RFC6750 error
@@ -102,13 +103,16 @@ Defaults to `{APISexAuthBearer.Cache.NoCache, [ttl: 200]}`
 ## Error responses
 
 This plug, conforming to RFC6750, responds with the following status and parameters
-in case of authentication failure:
+in case of authentication failure when `:error_response_verbosity` is set to `:normal`:
 
 | Error                                   | HTTP status | Included WWW-Authenticate parameters |
 |-----------------------------------------|:-----------:|--------------------------------------|
 | No bearer token found                   | 401         | - realm                              |
 | Invalid bearer                          | 401         | - realm<br>- error                   |
 | Bearer doesn't have the required scopes | 403         | - realm<br>- error<br>- scope        |
+
+For other `:error_response_verbosity` values, see the documentation of the
+`send_error_response/3` function.
 
 ## Example
 

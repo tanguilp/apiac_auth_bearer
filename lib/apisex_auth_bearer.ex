@@ -67,21 +67,22 @@ defmodule APISexAuthBearer do
 
   ## Plug options
 
-  - `realm`: a mandatory `String.t` that conforms to the HTTP quoted-string syntax, however without
-  the surrounding quotes (which will be added automatically when needed). Defaults to `default_realm`
-  - `bearer_validator`: a `{validator_module, validator_options}` tuple where `validator_module` is
+  - `realm`: a mandatory `String.t` that conforms to the HTTP quoted-string syntax,
+  however without
+  the surrounding quotes (which will be added automatically when needed).
+  Defaults to `default_realm`
+  - `bearer_validator`: a `{validator_module, validator_options}` tuple where
+  `validator_module` is
   a module implementing the `APISexAuthBearer.Validator` behaviour and `validator_options`
   module-specific options that will be passed to the validator when called. No default
   value, mandatory parameter
-  - `bearer_extract_methods`: a list of methods that will be tried to extract the bearer token, among
-  `:header`, `:body` and `:query`. Methods will be tried in the list order.
+  - `bearer_extract_methods`: a list of methods that will be tried to extract the bearer
+  token, among `:header`, `:body` and `:query`. Methods will be tried in the list order.
   Defaults to `[:header]`
-  - `set_authn_error_response`: if `true`, sets the error response accordingly to the standard:
-  changing the HTTP status code to `401` or `403` and setting the `WWW-Authenticate` value.
-  If false, does not change them. Defaults to `true`
-  - `halt_on_authn_failure`: if set to `true`, halts the connection and directly sends the
-  response when authentication fails. When set to `false`, does nothing and therefore allows
-  chaining several authenticators. Defaults to `true`
+  - `set_error_response`: function called when authentication failed. Defaults to
+  `APISexAuthBearer.send_error_response/3`
+  - `error_response_verbosity`: one of `:debug`, `:normal` or `:minimal`.
+  Defaults to `:normal`
   - `required_scopes`: a list of scopes required to access this API. Defaults to `[]`.
   When the bearer's granted scope are
   not sufficient, an HTTP 403 response is sent with the `insufficient_scope` RFC6750 error
@@ -108,13 +109,16 @@ defmodule APISexAuthBearer do
   ## Error responses
 
   This plug, conforming to RFC6750, responds with the following status and parameters
-  in case of authentication failure:
+  in case of authentication failure when `:error_response_verbosity` is set to `:normal`:
 
   | Error                                   | HTTP status | Included WWW-Authenticate parameters |
   |-----------------------------------------|:-----------:|--------------------------------------|
   | No bearer token found                   | 401         | - realm                              |
   | Invalid bearer                          | 401         | - realm<br>- error                   |
   | Bearer doesn't have the required scopes | 403         | - realm<br>- error<br>- scope        |
+
+  For other `:error_response_verbosity` values, see the documentation of the
+  `send_error_response/3` function.
 
   ## Example
 
@@ -203,74 +207,62 @@ defmodule APISexAuthBearer do
 
   @default_realm_name "default_realm"
 
-  @type bearer :: String.t
+  @type bearer :: String.t()
 
   @doc """
   Plug initialization callback
   """
 
-  @impl true
+  @impl Plug
   def init(opts) do
     realm = Keyword.get(opts, :realm, @default_realm_name)
 
-    if not is_binary(realm), do: raise "Invalid realm, must be a string"
+    if not is_binary(realm), do: raise("Invalid realm, must be a string")
 
-    if not APISex.rfc7230_quotedstring?("\"#{realm}\""), do: raise "Invalid realm string (do not conform with RFC7230 quoted string)"
+    if not APISex.rfc7230_quotedstring?("\"#{realm}\""),
+      do: raise("Invalid realm string (do not conform with RFC7230 quoted string)")
 
     required_scopes = ScopeSet.new(Keyword.get(opts, :required_scopes, []))
 
     Enum.each(
       required_scopes,
-      fn scope -> if not Scope.oauth2_scope?(scope) do
-        raise "Invalid scope in list required scopes"
+      fn scope ->
+        if not Scope.oauth2_scope?(scope) do
+          raise "Invalid scope in list required scopes"
         end
       end
     )
 
-    if opts[:bearer_validator] == nil, do: raise "Missing mandatory option `bearer_validator`"
+    if opts[:bearer_validator] == nil, do: raise("Missing mandatory option `bearer_validator`")
 
     {cache_module, cache_opts} = Keyword.get(opts, :cache, {APISexAuthBearer.Cache.NoCache, []})
     cache_opts = Keyword.put_new(cache_opts, :ttl, 200)
 
-    %{
-      realm: realm,
-      bearer_validator: Keyword.get(opts, :bearer_validator, nil),
-      bearer_extract_methods: Keyword.get(opts, :bearer_extract_methods, [:header]),
-      set_authn_error_response: Keyword.get(opts, :set_authn_error_response, true),
-      halt_on_authn_failure: Keyword.get(opts, :halt_on_authn_failure, true),
-      required_scopes: required_scopes,
-      forward_bearer: Keyword.get(opts, :forward_bearer, false),
-      forward_metadata: Keyword.get(opts, :forward_metadata, []),
-      cache: {cache_module, cache_module.init_opts(cache_opts)}
-    }
+    opts
+    |> Enum.into(%{})
+    |> Map.put(:realm, realm)
+    |> Map.put_new(:bearer_extract_methods, [:header])
+    |> Map.put_new(:set_error_response, &APISexAuthBearer.send_error_response/3)
+    |> Map.put_new(:error_response_verbosity, :normal)
+    |> Map.put(:required_scopes, required_scopes)
+    |> Map.put_new(:forward_bearer, false)
+    |> Map.put_new(:forward_metadata, [])
+    |> Map.put(:cache, {cache_module, cache_module.init_opts(cache_opts)})
   end
 
   @doc """
   Plug pipeline callback
   """
 
-  @impl true
-  @spec call(Plug.Conn, Plug.opts) :: Plug.Conn
+  @impl Plug
+  @spec call(Plug.Conn, Plug.opts()) :: Plug.Conn
   def call(conn, opts) do
-    with {:ok, conn, bearer} <- extract_credentials(conn, opts),
-         {:ok, conn} <- validate_credentials(conn, bearer, opts) do
+    with {:ok, conn, credentials} <- extract_credentials(conn, opts),
+         {:ok, conn} <- validate_credentials(conn, credentials, opts) do
       conn
     else
       {:error, conn, %APISex.Authenticator.Unauthorized{} = error} ->
-        conn =
-          if opts[:set_authn_error_response] do
-            set_error_response(conn, error, opts)
-          else
-            conn
-          end
-
-        if opts[:halt_on_authn_failure] do
-          conn
-          |> Plug.Conn.send_resp()
-          |> Plug.Conn.halt()
-        else
-          conn
-        end
+        opts[:set_error_response].(conn, error, opts)
     end
   end
 
@@ -278,28 +270,40 @@ defmodule APISexAuthBearer do
   `APISex.Authenticator` credential extractor callback
   """
 
-  @impl true
+  @impl APISex.Authenticator
   def extract_credentials(conn, opts) do
     case Enum.reduce_while(
-      opts[:bearer_extract_methods],
-      conn,
-      fn method, conn ->
-        case extract_bearer(conn, method) do
-          {:ok, _conn, _bearer} = ret ->
-            {:halt, ret}
+           opts[:bearer_extract_methods],
+           conn,
+           fn method, conn ->
+             case extract_bearer(conn, method) do
+               {:ok, _conn, _bearer} = ret ->
+                 {:halt, ret}
 
-          {:error, conn} ->
-            {:cont, conn}
-        end
-      end
-    ) do
+               {:error, conn, :credentials_not_found} ->
+                 {:cont, conn}
+
+               {:error, _conn, _reason} = ret ->
+                 {:halt, ret}
+             end
+           end
+         ) do
       %Plug.Conn{} = conn ->
-        {:error, conn, %APISex.Authenticator.Unauthorized{
-          authenticator: __MODULE__,
-          reason: :no_bearer_found}}
+        {:error, conn,
+         %APISex.Authenticator.Unauthorized{
+           authenticator: __MODULE__,
+           reason: :credentials_not_found
+         }}
 
       {:ok, conn, bearer} ->
         {:ok, conn, bearer}
+
+      {:error, conn, reason} ->
+        {:error, conn,
+         %APISex.Authenticator.Unauthorized{
+           authenticator: __MODULE__,
+           reason: reason
+         }}
     end
   end
 
@@ -314,65 +318,68 @@ defmodule APISexAuthBearer do
         if APISex.rfc7235_token68?(bearer) do
           {:ok, conn, bearer}
         else
-          {:error, :invalid_bearer_format}
+          {:error, conn, :invalid_bearer_format}
         end
 
       _ ->
-        {:error, conn}
+        {:error, conn, :credentials_not_found}
     end
   end
 
   defp extract_bearer(conn, :body) do
     try do
-      plug_parser_opts = Plug.Parsers.init(parsers: [:urlencoded],
-                                           pass: ["application/x-www-form-urlencoded"])
+      plug_parser_opts =
+        Plug.Parsers.init(
+          parsers: [:urlencoded],
+          pass: ["application/x-www-form-urlencoded"]
+        )
 
       conn = Plug.Parsers.call(conn, plug_parser_opts)
 
       case conn.body_params["access_token"] do
         nil ->
-          {:error, conn}
+          {:error, conn, :credentials_not_found}
 
         bearer ->
           if APISex.rfc7235_token68?(bearer) do
             {:ok, conn, bearer}
           else
-            {:error, :invalid_bearer_format}
+            {:error, conn, :invalid_bearer_format}
           end
 
           {:ok, conn, bearer}
       end
     rescue
       UnsupportedMediaTypeError ->
-        {:error, conn}
+        {:error, conn, :unsupported_media_type}
     end
   end
 
   defp extract_bearer(conn, :query) do
-      conn = Plug.Conn.fetch_query_params(conn)
+    conn = Plug.Conn.fetch_query_params(conn)
 
-      case conn.query_params["access_token"] do
-        nil ->
-          {:error, conn}
+    case conn.query_params["access_token"] do
+      nil ->
+        {:error, conn, :credentials_not_found}
 
-        bearer ->
-          if APISex.rfc7235_token68?(bearer) do
-            #RFC6750 - section 2.3:
-            #  Clients using the URI Query Parameter method SHOULD also send a
-            #  Cache-Control header containing the "no-store" option.  Server
-            #  success (2XX status) responses to these requests SHOULD contain a
-            #  Cache-Control header with the "private" option.
+      bearer ->
+        if APISex.rfc7235_token68?(bearer) do
+          # RFC6750 - section 2.3:
+          #  Clients using the URI Query Parameter method SHOULD also send a
+          #  Cache-Control header containing the "no-store" option.  Server
+          #  success (2XX status) responses to these requests SHOULD contain a
+          #  Cache-Control header with the "private" option.
 
-            conn = Plug.Conn.put_resp_header(conn, "cache-control", "private")
+          conn = Plug.Conn.put_resp_header(conn, "cache-control", "private")
 
-            {:ok, conn, bearer}
-          else
-            {:error, :invalid_bearer_format}
-          end
-      end
+          {:ok, conn, bearer}
+        else
+          {:error, conn, :invalid_bearer_format}
+        end
+    end
   end
 
-  @impl true
+  @impl APISex.Authenticator
   def validate_credentials(conn, bearer, opts) do
     {cache, cache_opts} = opts[:cache]
 
@@ -404,8 +411,8 @@ defmodule APISexAuthBearer do
             validate_bearer_data(conn, bearer, bearer_data, opts)
 
           {:error, error} ->
-            {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__,
-              reason: error}}
+            {:error, conn,
+             %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: error}}
         end
     end
   end
@@ -414,8 +421,7 @@ defmodule APISexAuthBearer do
     metadata = if opts[:forward_bearer], do: %{"bearer" => bearer}, else: %{}
 
     with :ok <- verify_scopes(conn, bearer_data, opts),
-         :ok <- verify_audience(conn, bearer_data, opts)
-    do
+         :ok <- verify_audience(conn, bearer_data, opts) do
       metadata =
         case opts[:forward_metadata] do
           :all ->
@@ -454,7 +460,8 @@ defmodule APISexAuthBearer do
     if ScopeSet.subset?(opts[:required_scopes], ScopeSet.new(bearer_data["scope"])) do
       :ok
     else
-      {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :insufficient_scope}}
+      {:error, conn,
+       %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :insufficient_scope}}
     end
   end
 
@@ -465,18 +472,30 @@ defmodule APISexAuthBearer do
           if opts[:resource_server_name] == aud do
             :ok
           else
-            {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :invalid_audience}}
+            {:error, conn,
+             %APISex.Authenticator.Unauthorized{
+               authenticator: __MODULE__,
+               reason: :invalid_audience
+             }}
           end
 
         aud_list when is_list(aud_list) ->
           if opts[:resource_server_name] in aud_list do
             :ok
           else
-            {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :invalid_audience}}
+            {:error, conn,
+             %APISex.Authenticator.Unauthorized{
+               authenticator: __MODULE__,
+               reason: :invalid_audience
+             }}
           end
 
         _ ->
-          {:error, conn, %APISex.Authenticator.Unauthorized{authenticator: __MODULE__, reason: :invalid_audience}}
+          {:error, conn,
+           %APISex.Authenticator.Unauthorized{
+             authenticator: __MODULE__,
+             reason: :invalid_audience
+           }}
       end
     else
       :ok
@@ -484,28 +503,101 @@ defmodule APISexAuthBearer do
   end
 
   @doc """
-  `APISex.Authenticator` error response callback
+  Implementation of the `APISex.Authenticator` callback
+
+  ## Verbosity
+
+  The following elements in the HTTP response are set depending on the value
+  of the `:error_response_verbosity` option:
+
+  ### `:error_response_verbosity` set to `:debug`:
+
+  | Error                                   | HTTP status | Included WWW-Authenticate parameters                        |
+  |-----------------------------------------|:-----------:|-------------------------------------------------------------|
+  | No bearer token found                   | 401         | - realm                                                     |
+  | Invalid bearer                          | 401         | - realm<br>- error<br>- error_description                   |
+  | Bearer doesn't have the required scopes | 403         | - realm<br>- error<br>- scope<br>- error_description        |
+
+  ### `:error_response_verbosity` set to `:normal`:
+
+  | Error                                   | HTTP status | Included WWW-Authenticate parameters |
+  |-----------------------------------------|:-----------:|--------------------------------------|
+  | No bearer token found                   | 401         | - realm                              |
+  | Invalid bearer                          | 401         | - realm<br>- error                   |
+  | Bearer doesn't have the required scopes | 403         | - realm<br>- error<br>- scope        |
+
+  ### `:error_response_verbosity` set to `:minimal`:
+
+  | Error                                   | HTTP status | Included WWW-Authenticate parameters |
+  |-----------------------------------------|:-----------:|--------------------------------------|
+  | No bearer token found                   | 401         |                                      |
+  | Invalid bearer                          | 401         |                                      |
+  | Bearer doesn't have the required scopes | 401         |                                      |
+
+  Note: does not conform to the specification
+
   """
 
-  @impl true
-  def set_error_response(conn, error, opts) do
+  @impl APISex.Authenticator
+  def send_error_response(conn, error, %{:error_response_verbosity => :debug} = opts) do
     {resp_status, error_map} =
       case error do
-        %APISex.Authenticator.Unauthorized{reason: :no_bearer_found} ->
+        %APISex.Authenticator.Unauthorized{reason: :credentials_not_found} ->
           {:unauthorized, %{"realm" => opts[:realm]}}
 
         %APISex.Authenticator.Unauthorized{reason: :insufficient_scope} ->
-          {:forbidden, %{"error" => "insufficient_scope",
-                         "scope" => ScopeSet.to_scope_param(opts[:required_scopes]),
-                         "realm" => opts[:realm]}}
+          {:forbidden,
+           %{
+             "error" => "insufficient_scope",
+             "scope" => ScopeSet.to_scope_param(opts[:required_scopes]),
+             "realm" => opts[:realm],
+             "error_description" => "Insufficient scope"
+           }}
 
-        %APISex.Authenticator.Unauthorized{} ->
-          {:unauthorized, %{"error" => "invalid_token",
-                         "realm" => opts[:realm]}}
+        %APISex.Authenticator.Unauthorized{reason: reason} ->
+          {:unauthorized,
+           %{
+             "error" => "invalid_token",
+             "realm" => opts[:realm],
+             "error_description" => Atom.to_string(reason)
+           }}
       end
 
     conn
     |> APISex.set_WWWauthenticate_challenge("Bearer", error_map)
-    |> Plug.Conn.resp(resp_status, "")
+    |> Plug.Conn.send_resp(resp_status, "")
+    |> Plug.Conn.halt()
+  end
+
+  @impl APISex.Authenticator
+  def send_error_response(conn, error, %{:error_response_verbosity => :normal} = opts) do
+    {resp_status, error_map} =
+      case error do
+        %APISex.Authenticator.Unauthorized{reason: :credentials_not_found} ->
+          {:unauthorized, %{"realm" => opts[:realm]}}
+
+        %APISex.Authenticator.Unauthorized{reason: :insufficient_scope} ->
+          {:forbidden,
+           %{
+             "error" => "insufficient_scope",
+             "scope" => ScopeSet.to_scope_param(opts[:required_scopes]),
+             "realm" => opts[:realm]
+           }}
+
+        %APISex.Authenticator.Unauthorized{} ->
+          {:unauthorized, %{"error" => "invalid_token", "realm" => opts[:realm]}}
+      end
+
+    conn
+    |> APISex.set_WWWauthenticate_challenge("Bearer", error_map)
+    |> Plug.Conn.send_resp(resp_status, "")
+    |> Plug.Conn.halt()
+  end
+
+  @impl APISex.Authenticator
+  def send_error_response(conn, _error, %{:error_response_verbosity => :minimal}) do
+    conn
+    |> Plug.Conn.send_resp(:unauthorized, "")
+    |> Plug.Conn.halt()
   end
 end

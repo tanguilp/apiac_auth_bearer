@@ -17,7 +17,7 @@ defmodule APISexAuthBearer.Validator.Introspect do
   Use it to authenticate to the OAuth2 authorization server.
 
   ## OAuth2MetadataUpdater
-  
+
   When using the `issueruri` option, make sure to include the `OAuth2MetadataUpdater`
   library in the list of your dependencies, as the process or fetching metadata
   information (including the `introspection_endpoint` parameter) is implemented
@@ -28,10 +28,11 @@ defmodule APISexAuthBearer.Validator.Introspect do
   def validate(bearer, validator_opts) do
     validator_opts = init_opts(validator_opts)
 
-    middlewares = [
-      {Tesla.Middleware.FormUrlencoded, nil},
-      {Tesla.Middleware.Headers, [{"accept", "application/json"}]},
-    ] ++ validator_opts[:tesla_middlewares]
+    middlewares =
+      [
+        {Tesla.Middleware.FormUrlencoded, nil},
+        {Tesla.Middleware.Headers, [{"accept", "application/json"}]}
+      ] ++ validator_opts[:tesla_middlewares]
 
     # default httpc Tesla's adapter is unsafe (does not check TLS certificates)
     http_client = Tesla.client(middlewares, Tesla.Adapter.Hackney)
@@ -40,10 +41,10 @@ defmodule APISexAuthBearer.Validator.Introspect do
 
     with {:ok, introspection_endpoint} <- introspection_endpoint(validator_opts),
          :ok <- https?(introspection_endpoint),
-         {:ok, %Tesla.Env{status: 200, headers: headers, body: resp_body}} <- Tesla.post(http_client, introspection_endpoint, req_body),
+         {:ok, %Tesla.Env{status: 200, headers: headers, body: resp_body}} <-
+           Tesla.post(http_client, introspection_endpoint, req_body),
          :ok <- valid_content_type?(headers),
-         {:ok, parsed_body} <- Poison.decode(resp_body)
-    do
+         {:ok, parsed_body} <- Poison.decode(resp_body) do
       case parsed_body do
         %{"active" => true} ->
           {:ok, parsed_body}
@@ -73,7 +74,11 @@ defmodule APISexAuthBearer.Validator.Introspect do
             {issuer_uri, validator_opts}
         end
 
-      case Oauth2MetadataUpdater.get_metadata_value(issuer_uri, "introspection_endpoint", oa2mu_opts) do
+      case Oauth2MetadataUpdater.get_metadata_value(
+             issuer_uri,
+             "introspection_endpoint",
+             oa2mu_opts
+           ) do
         {:ok, nil} ->
           {:error, :no_introspection_endpoint}
 

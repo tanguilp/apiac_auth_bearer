@@ -4,12 +4,15 @@ defmodule APISexAuthBearerTest do
   use Plug.Test
 
   test "valid bearer, check APISex attributes are correctly set" do
-    opts = APISexAuthBearer.init([
-      bearer_validator: {APISexAuthBearer.Validator.Identity,
-        [
-          response: {:ok, %{"active" => true, "client_id" => "testclient", "sub" => "jean-paul" }}
-        ]}
-    ])
+    opts =
+      APISexAuthBearer.init(
+        bearer_validator:
+          {APISexAuthBearer.Validator.Identity,
+           [
+             response:
+               {:ok, %{"active" => true, "client_id" => "testclient", "sub" => "jean-paul"}}
+           ]}
+      )
 
     conn =
       conn(:get, "/")
@@ -26,13 +29,15 @@ defmodule APISexAuthBearerTest do
   end
 
   test "invalid bearer, check error response" do
-    opts = APISexAuthBearer.init([
-      realm: "realm9",
-      bearer_validator: {APISexAuthBearer.Validator.Identity,
-        [
-          response: {:error, %{"active" => false}}
-        ]}
-    ])
+    opts =
+      APISexAuthBearer.init(
+        realm: "realm9",
+        bearer_validator:
+          {APISexAuthBearer.Validator.Identity,
+           [
+             response: {:error, %{"active" => false}}
+           ]}
+      )
 
     conn =
       conn(:get, "/")
@@ -44,17 +49,19 @@ defmodule APISexAuthBearerTest do
     refute APISex.authenticated?(conn) == true
     assert APISex.client(conn) == nil
     assert APISex.subject(conn) == nil
+
     assert Plug.Conn.get_resp_header(conn, "www-authenticate") in [
-      ["Bearer realm=\"realm9\", error=\"invalid_token\""],
-      ["Bearer error=\"invalid_token\", realm=\"realm9\""]
-    ]
+             ["Bearer realm=\"realm9\", error=\"invalid_token\""],
+             ["Bearer error=\"invalid_token\", realm=\"realm9\""]
+           ]
   end
 
   test "no bearer, check error response" do
-    opts = APISexAuthBearer.init([
-      realm: "realm9",
-      bearer_validator: {APISexAuthBearer.Validator.Identity, []}
-    ])
+    opts =
+      APISexAuthBearer.init(
+        realm: "realm9",
+        bearer_validator: {APISexAuthBearer.Validator.Identity, []}
+      )
 
     conn =
       conn(:get, "/")
@@ -69,14 +76,16 @@ defmodule APISexAuthBearerTest do
   end
 
   test "a bearer in the body can be retreived and validated" do
-    opts = APISexAuthBearer.init([
-      bearer_validator: {APISexAuthBearer.Validator.Identity,
-        [
-          response: {:ok, %{"active" => true}},
-        ]},
-      bearer_extract_methods: [:header, :query, :body],
-      forward_bearer: true
-    ])
+    opts =
+      APISexAuthBearer.init(
+        bearer_validator:
+          {APISexAuthBearer.Validator.Identity,
+           [
+             response: {:ok, %{"active" => true}}
+           ]},
+        bearer_extract_methods: [:header, :query, :body],
+        forward_bearer: true
+      )
 
     conn =
       conn(:get, "/")
@@ -92,14 +101,16 @@ defmodule APISexAuthBearerTest do
   end
 
   test "a bearer in the query can be retreived and validated" do
-    opts = APISexAuthBearer.init([
-      bearer_validator: {APISexAuthBearer.Validator.Identity,
-        [
-          response: {:ok, %{"active" => true}},
-        ]},
-      bearer_extract_methods: [:body, :header, :query],
-      forward_bearer: true
-    ])
+    opts =
+      APISexAuthBearer.init(
+        bearer_validator:
+          {APISexAuthBearer.Validator.Identity,
+           [
+             response: {:ok, %{"active" => true}}
+           ]},
+        bearer_extract_methods: [:body, :header, :query],
+        forward_bearer: true
+      )
 
     conn =
       conn(:get, "/")
@@ -115,17 +126,32 @@ defmodule APISexAuthBearerTest do
   end
 
   test "a bearer with sufficient scopes" do
-    opts = APISexAuthBearer.init([
-      realm: "Pays des merveilles",
-      bearer_validator: {APISexAuthBearer.Validator.Identity,
-        [
-
-          response: {:ok, %{"active" => true,
-            "scope" => ["scope1", "scope6", "scope3", "scope10", "scope5",
-                        "scope2", "scope7", "scope8", "scope9", "scope4"]}},
-        ]},
-      required_scopes: ["scope1", "scope2", "scope3", "scope4", "scope5", "scope6"]
-    ])
+    opts =
+      APISexAuthBearer.init(
+        realm: "Pays des merveilles",
+        bearer_validator:
+          {APISexAuthBearer.Validator.Identity,
+           [
+             response:
+               {:ok,
+                %{
+                  "active" => true,
+                  "scope" => [
+                    "scope1",
+                    "scope6",
+                    "scope3",
+                    "scope10",
+                    "scope5",
+                    "scope2",
+                    "scope7",
+                    "scope8",
+                    "scope9",
+                    "scope4"
+                  ]
+                }}
+           ]},
+        required_scopes: ["scope1", "scope2", "scope3", "scope4", "scope5", "scope6"]
+      )
 
     conn =
       conn(:get, "/")
@@ -139,16 +165,16 @@ defmodule APISexAuthBearerTest do
   end
 
   test "a bearer with insufficient scopes" do
-    opts = APISexAuthBearer.init([
-      realm: "Pays des merveilles",
-      bearer_validator: {APISexAuthBearer.Validator.Identity,
-        [
-
-          response: {:ok, %{"active" => true,
-            "scope" => ["scope1", "scope3", "scope5"]}},
-        ]},
-      required_scopes: ["scope1", "scope2", "scope3", "scope4", "scope5", "scope6"]
-    ])
+    opts =
+      APISexAuthBearer.init(
+        realm: "Pays des merveilles",
+        bearer_validator:
+          {APISexAuthBearer.Validator.Identity,
+           [
+             response: {:ok, %{"active" => true, "scope" => ["scope1", "scope3", "scope5"]}}
+           ]},
+        required_scopes: ["scope1", "scope2", "scope3", "scope4", "scope5", "scope6"]
+      )
 
     conn =
       conn(:get, "/")
@@ -158,24 +184,46 @@ defmodule APISexAuthBearerTest do
     assert conn.status == 403
     assert conn.halted
     refute APISex.authenticated?(conn) == true
+
     assert Plug.Conn.get_resp_header(conn, "www-authenticate") in [
-      ["Bearer realm=\"Pays des merveilles\", error=\"insufficient_scope\", scope=\"scope1 scope2 scope3 scope4 scope5 scope6\""],
-      ["Bearer realm=\"Pays des merveilles\", scope=\"scope1 scope2 scope3 scope4 scope5 scope6\", error=\"insufficient_scope\""],
-      ["Bearer error=\"insufficient_scope\", realm=\"Pays des merveilles\", scope=\"scope1 scope2 scope3 scope4 scope5 scope6\""],
-      ["Bearer error=\"insufficient_scope\", scope=\"scope1 scope2 scope3 scope4 scope5 scope6\", realm=\"Pays des merveilles\""],
-      ["Bearer scope=\"scope1 scope2 scope3 scope4 scope5 scope6\", realm=\"Pays des merveilles\", error=\"insufficient_scope\""],
-      ["Bearer scope=\"scope1 scope2 scope3 scope4 scope5 scope6\", error=\"insufficient_scope\", realm=\"Pays des merveilles\""]
-    ]
+             [
+               "Bearer realm=\"Pays des merveilles\", error=\"insufficient_scope\", scope=\"scope1 scope2 scope3 scope4 scope5 scope6\""
+             ],
+             [
+               "Bearer realm=\"Pays des merveilles\", scope=\"scope1 scope2 scope3 scope4 scope5 scope6\", error=\"insufficient_scope\""
+             ],
+             [
+               "Bearer error=\"insufficient_scope\", realm=\"Pays des merveilles\", scope=\"scope1 scope2 scope3 scope4 scope5 scope6\""
+             ],
+             [
+               "Bearer error=\"insufficient_scope\", scope=\"scope1 scope2 scope3 scope4 scope5 scope6\", realm=\"Pays des merveilles\""
+             ],
+             [
+               "Bearer scope=\"scope1 scope2 scope3 scope4 scope5 scope6\", realm=\"Pays des merveilles\", error=\"insufficient_scope\""
+             ],
+             [
+               "Bearer scope=\"scope1 scope2 scope3 scope4 scope5 scope6\", error=\"insufficient_scope\", realm=\"Pays des merveilles\""
+             ]
+           ]
   end
 
   test "metadata are correctly forwarded" do
-    opts = APISexAuthBearer.init([
-      bearer_validator: {APISexAuthBearer.Validator.Identity,
-        [
-          response: {:ok, %{"active" => true, "username" => "Hugo", "non_standard_attr" => "something", "not_forwarded" => "never ever"}}
-        ]},
-      forward_metadata: ["username", "non_standard_attr"]
-    ])
+    opts =
+      APISexAuthBearer.init(
+        bearer_validator:
+          {APISexAuthBearer.Validator.Identity,
+           [
+             response:
+               {:ok,
+                %{
+                  "active" => true,
+                  "username" => "Hugo",
+                  "non_standard_attr" => "something",
+                  "not_forwarded" => "never ever"
+                }}
+           ]},
+        forward_metadata: ["username", "non_standard_attr"]
+      )
 
     conn =
       conn(:get, "/")
@@ -192,13 +240,16 @@ defmodule APISexAuthBearerTest do
   end
 
   test "cache interface works with another cache" do
-    opts = APISexAuthBearer.init([
-      bearer_validator: {APISexAuthBearer.Validator.Identity,
-        [
-          response: {:ok, %{"active" => true, "client_id" => "testclient", "sub" => "jean-paul" }}
-        ]},
-      cache: {APISexAuthBearer.Cache.ETSMock, []}
-    ])
+    opts =
+      APISexAuthBearer.init(
+        bearer_validator:
+          {APISexAuthBearer.Validator.Identity,
+           [
+             response:
+               {:ok, %{"active" => true, "client_id" => "testclient", "sub" => "jean-paul"}}
+           ]},
+        cache: {APISexAuthBearer.Cache.ETSMock, []}
+      )
 
     conn =
       conn(:get, "/")
