@@ -268,6 +268,9 @@ defmodule APISexAuthBearer do
 
   @doc """
   `APISex.Authenticator` credential extractor callback
+
+  Returns the credentials under the form `String.t()` which
+  is the bearer token
   """
 
   @impl APISex.Authenticator
@@ -599,5 +602,40 @@ defmodule APISexAuthBearer do
     conn
     |> Plug.Conn.send_resp(:unauthorized, "")
     |> Plug.Conn.halt()
+  end
+
+  @doc """
+  Sets the HTTP `WWW-authenticate` header when no such a scheme is used for
+  authentication.
+
+  Sets the HTTP `WWW-Authenticate` header with the `Bearer` scheme and the realm
+  name, when the `Bearer` scheme was not used in the request. When this scheme is
+  used in the request, response will be sent by `#{__MODULE__}.send_error_response/3`.
+  This allows advertising that the `Bearer` scheme is available, without stopping
+  the plug pipeline.
+
+  Raises an exception when the error response verbosity is set to `:minimal` since
+  it does not set the `WWW-Authenticate` header.
+  """
+  @spec set_WWWauthenticate_header(
+          Plug.Conn.t(),
+          %APISex.Authenticator.Unauthorized{},
+          any()
+        ) :: Plug.Conn.t()
+  def set_WWWauthenticate_header(_conn, _err, %{:error_response_verbosity => :minimal}) do
+    raise "#{__ENV__.function} not accepted when :error_response_verbosity is set to :minimal"
+  end
+
+  def set_WWWauthenticate_header(
+        conn,
+        %APISex.Authenticator.Unauthorized{reason: :credentials_not_found},
+        opts
+      ) do
+    conn
+    |> APISex.set_WWWauthenticate_challenge("Bearer", %{"realm" => "#{opts[:realm]}"})
+  end
+
+  def set_WWWauthenticate_header(conn, error, opts) do
+    send_error_response(conn, error, opts)
   end
 end
