@@ -123,7 +123,7 @@ defmodule APISexAuthBearer do
   ## Example
 
   ```elixir
-  Plug APISexAuthBearer, bearer_validator: {APISexAuthBearer.Validator.Introspect,
+  plug APISexAuthBearer, bearer_validator: {APISexAuthBearer.Validator.Introspect,
                                             [
                                               issuer: "https://example.com/auth"
                                               tesla_middleware:[

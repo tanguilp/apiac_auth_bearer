@@ -117,7 +117,7 @@ For other `:error_response_verbosity` values, see the documentation of the
 ## Example
 
 ```elixir
-Plug APISexAuthBearer, bearer_validator: {APISexAuthBearer.Validator.Introspect,
+plug APISexAuthBearer, bearer_validator: {APISexAuthBearer.Validator.Introspect,
 					  [
                                             issuer: "https://example.com/auth"
                                             tesla_middleware:[
