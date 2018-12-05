@@ -638,4 +638,42 @@ defmodule APISexAuthBearer do
   def set_WWWauthenticate_header(conn, error, opts) do
     send_error_response(conn, error, opts)
   end
+
+  @doc """
+  Saves failure in a `Plug.Conn.t()`'s private field and returns the `conn`
+
+  See the `APISex.AuthFailureResponseData` module for more information.
+  """
+  @spec save_authentication_failure_response(Plug.Conn.t(),
+                                             %APISex.Authenticator.Unauthorized{},
+                                             any()) :: Plug.Conn.t()
+  def save_authentication_failure_response(conn, error, opts) do
+    {resp_status, error_map} =
+      case error do
+        %APISex.Authenticator.Unauthorized{reason: :credentials_not_found} ->
+          {:unauthorized, %{"realm" => opts[:realm]}}
+
+        %APISex.Authenticator.Unauthorized{reason: :insufficient_scope} ->
+          {:forbidden,
+           %{
+             "error" => "insufficient_scope",
+             "scope" => ScopeSet.to_scope_param(opts[:required_scopes]),
+             "realm" => opts[:realm]
+           }}
+
+        %APISex.Authenticator.Unauthorized{} ->
+          {:unauthorized, %{"error" => "invalid_token", "realm" => opts[:realm]}}
+      end
+
+    failure_response_data =
+      %APISex.AuthFailureResponseData{
+        module: __MODULE__,
+        reason: error.reason,
+        www_authenticate_header: {"Bearer", error_map},
+        status_code: resp_status,
+        body: nil
+      }
+
+    APISex.AuthFailureResponseData.put(conn, failure_response_data)
+  end
 end
