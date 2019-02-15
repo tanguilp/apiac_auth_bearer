@@ -652,9 +652,11 @@ defmodule APISexAuthBearer do
 
   See the `APISex.AuthFailureResponseData` module for more information.
   """
-  @spec save_authentication_failure_response(Plug.Conn.t(),
-                                             %APISex.Authenticator.Unauthorized{},
-                                             any()) :: Plug.Conn.t()
+  @spec save_authentication_failure_response(
+          Plug.Conn.t(),
+          %APISex.Authenticator.Unauthorized{},
+          any()
+        ) :: Plug.Conn.t()
   def save_authentication_failure_response(conn, error, opts) do
     {resp_status, error_map} =
       case error do
@@ -673,14 +675,13 @@ defmodule APISexAuthBearer do
           {:unauthorized, %{"error" => "invalid_token", "realm" => opts[:realm]}}
       end
 
-    failure_response_data =
-      %APISex.AuthFailureResponseData{
-        module: __MODULE__,
-        reason: error.reason,
-        www_authenticate_header: {"Bearer", error_map},
-        status_code: resp_status,
-        body: nil
-      }
+    failure_response_data = %APISex.AuthFailureResponseData{
+      module: __MODULE__,
+      reason: error.reason,
+      www_authenticate_header: {"Bearer", error_map},
+      status_code: resp_status,
+      body: nil
+    }
 
     APISex.AuthFailureResponseData.put(conn, failure_response_data)
   end
