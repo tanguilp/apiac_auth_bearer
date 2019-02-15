@@ -29,7 +29,7 @@ defmodule APISexAuthBearer.Mixfile do
       {:tesla, "~> 1.2.0"},
       # Tesla's adapter
       {:hackney, "~> 1.0"},
-      {:apisex, github: "tanguilp/apisex", tag: "master"},
+      {:apisex, github: "tanguilp/apisex", tag: "0.1.0"},
       {:oauth2_utils, github: "tanguilp/oauth2_utils", tag: "master"},
       {:oauth2_metadata_updater,
        github: "tanguilp/oauth2_metadata_updater", tag: "master", optional: true},
