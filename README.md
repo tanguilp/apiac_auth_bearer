@@ -1,6 +1,6 @@
-# APISexAuthBearer
+# APIacAuthBearer
 
-An `APISex.Authenticator` plug for API authentication using the OAuth2 `Bearer` scheme
+An `APIac.Authenticator` plug for API authentication using the OAuth2 `Bearer` scheme
 
 The OAuth2 `Bearer` scheme is documented in
 [RFC6750 - The OAuth 2.0 Authorization Framework: Bearer Token Usage](https://tools.ietf.org/html/rfc6750)
@@ -30,30 +30,40 @@ Bearer tokens are usually:
 - opaque tokens, to be validated against the OAuth2 authorization server that has released it
 - self-contained signed JWT tokens, that can be verified locally by the API
 
+## Installation
+
+```elixir
+def deps do
+  [
+    {:apiac_auth_bearer, github: "tanguilp/apiac_auth_bearer", tag: "v0.2.0"}
+  ]
+end
+```
+
 ## Validating the access token
 
-This plug provides with the `APISexAuthBearer.Validator.Introspect` bearer validator,
+This plug provides with the `APIacAuthBearer.Validator.Introspect` bearer validator,
 that implements the only standard for bearer validation:
 [RFC7662 - OAuth 2.0 Token Introspection](https://tools.ietf.org/html/rfc7662)
 
-A validator must implement the `APISexAuthBearer.Validator` behaviour.
+A validator must implement the `APIacAuthBearer.Validator` behaviour.
 
 ## Caching
 
 A bearer token may be used many times on an API in a short time-frame,
 which is why caching is important
-when using `APISexAuthBearer.Validator.Introspect` or a similar mechanism as a
+when using `APIacAuthBearer.Validator.Introspect` or a similar mechanism as a
 back pressure mechanism for the authorization server. This plug comes with 4 caching
 implementations:
 
 | Caching implementation         | Repository | Use-case                                                                                                                                                    |
 |--------------------------------|:----------:|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| APISexAuthBearer.Cache.NoCache | Built-in   | No caching, for testing purpose or when using a custom validator that doesn't require caching                                                               |
-| APISexAuthBearer.Cache.ETSMock | Built-in   | Local cache in ETS table, for testing purpose, development environment, etc. Does not have a token expiration clean-up code: the cache will grow endlessly  |
-| APISexAuthBearerCacheCachex  | [github](https://github.com/tanguilp/apisex_auth_bearer_cache_cachex) | Production ready cache, for a single instance or a small cluster of nodes                                                                                   |
-| APISexAuthBearerCacheRiak    | Work in progress | Production ready cache, for larger clusters of nodes                                                                                                        |
+| APIacAuthBearer.Cache.NoCache | Built-in   | No caching, for testing purpose or when using a custom validator that doesn't require caching                                                               |
+| APIacAuthBearer.Cache.ETSMock | Built-in   | Local cache in ETS table, for testing purpose, development environment, etc. Does not have a token expiration clean-up code: the cache will grow endlessly  |
+| APIacAuthBearerCacheCachex  | [github](https://github.com/tanguilp/apiac_auth_bearer_cache_cachex) | Production ready cache, for a single instance or a small cluster of nodes                                                                                   |
+| APIacAuthBearerCacheRiak    | Work in progress | Production ready cache, for larger clusters of nodes                                                                                                        |
 
-A cache implements the `APISexAuthBearer.Cache` behaviour.
+A cache implements the `APIacAuthBearer.Cache` behaviour.
 
 ## Validation flow sequence diagram
 
@@ -67,24 +77,24 @@ the surrounding quotes (which will be added automatically when needed).
 Defaults to `default_realm`
 - `bearer_validator`: a `{validator_module, validator_options}` tuple where
 `validator_module` is
-a module implementing the `APISexAuthBearer.Validator` behaviour and `validator_options`
+a module implementing the `APIacAuthBearer.Validator` behaviour and `validator_options`
 module-specific options that will be passed to the validator when called. No default
 value, mandatory parameter
 - `bearer_extract_methods`: a list of methods that will be tried to extract the bearer
 token, among `:header`, `:body` and `:query`. Methods will be tried in the list order.
 Defaults to `[:header]`
 - `set_error_response`: function called when authentication failed. Defaults to
-`APISexAuthBearer.send_error_response/3`
+`APIacAuthBearer.send_error_response/3`
 - `error_response_verbosity`: one of `:debug`, `:normal` or `:minimal`.
 Defaults to `:normal`
 - `required_scopes`: a list of scopes required to access this API. Defaults to `[]`.
 When the bearer's granted scope are
 not sufficient, an HTTP 403 response is sent with the `insufficient_scope` RFC6750 error
-- `forward_bearer`: if set to `true`, the bearer is saved in the `Plug.Conn` APISex
-metadata (under the "bearer" key) and can be later be retrieved using `APISex.metadata/1`.
+- `forward_bearer`: if set to `true`, the bearer is saved in the `Plug.Conn` APIac
+metadata (under the "bearer" key) and can be later be retrieved using `APIac.metadata/1`.
 Defaults to `false`
 - `forward_metadata`: in addition to the bearer's `client` and `subject`, list of the
-validator's response to set in the APISex metadata, or the `:all` atom to forward all
+validator's response to set in the APIac metadata, or the `:all` atom to forward all
 of the response's data.
 For example: `["username", "aud"]`. Defaults to `[]`
 - `resource_server_name`: the name of the resource server as a String, to be
@@ -92,13 +102,13 @@ checked against the `aud` attribute returned by the validator. This is an option
 security mecanism. See the security consideration sections. Defaults to `nil`, i.e.
 no check of this parameter
 - `cache`: a `{cache_module, cache_options}` tuple where `cache_module` is
-a module implementing the `APISexAuthBearer.Cache` behaviour and `cache_options`
+a module implementing the `APIacAuthBearer.Cache` behaviour and `cache_options`
 module-specific options that will be passed to the cache when called.
 The cached entry expiration ttl can be set thanks to the `:ttl` option. It is set to
 200 seconds by default, but is shortened when the bearer's lifetime is less than 200
 seconds (as indicated by its expiration timestamp of the `"exp"` member of bearer
 metadata returned by the validator)
-Defaults to `{APISexAuthBearer.Cache.NoCache, [ttl: 200]}`
+Defaults to `{APIacAuthBearer.Cache.NoCache, [ttl: 200]}`
 
 ## Error responses
 
@@ -117,7 +127,7 @@ For other `:error_response_verbosity` values, see the documentation of the
 ## Example
 
 ```elixir
-plug APISexAuthBearer, bearer_validator: {APISexAuthBearer.Validator.Introspect,
+plug APIacAuthBearer, bearer_validator: {APIacAuthBearer.Validator.Introspect,
 					  [
                                             issuer: "https://example.com/auth"
                                             tesla_middleware:[
@@ -128,7 +138,7 @@ plug APISexAuthBearer, bearer_validator: {APISexAuthBearer.Validator.Introspect,
                         required_scopes: ["article:write", "comments:moderate"],
                         forward_bearer: true,
                         resource_server_name: "https://example.com/api/data"
-                        cache: {APISexAuthBearerCacheCachex, []}
+                        cache: {APIacAuthBearerCacheCachex, []}
 
 ```
 

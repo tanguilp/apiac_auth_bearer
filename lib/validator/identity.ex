@@ -1,5 +1,5 @@
-defmodule APISexAuthBearer.Validator.Identity do
-  @behaviour APISexAuthBearer.Validator
+defmodule APIacAuthBearer.Validator.Identity do
+  @behaviour APIacAuthBearer.Validator
 
   @moduledoc """
   Returns data passed as a parameter - used for tests

@@ -1,13 +1,13 @@
-defmodule APISexAuthBearerTest do
+defmodule APIacAuthBearerTest do
   use ExUnit.Case, async: true
-  doctest APISexAuthBearer
+  doctest APIacAuthBearer
   use Plug.Test
 
-  test "valid bearer, check APISex attributes are correctly set" do
+  test "valid bearer, check APIac attributes are correctly set" do
     opts =
-      APISexAuthBearer.init(
+      APIacAuthBearer.init(
         bearer_validator:
-          {APISexAuthBearer.Validator.Identity,
+          {APIacAuthBearer.Validator.Identity,
            [
              response:
                {:ok, %{"active" => true, "client_id" => "testclient", "sub" => "jean-paul"}}
@@ -17,23 +17,23 @@ defmodule APISexAuthBearerTest do
     conn =
       conn(:get, "/")
       |> put_req_header("authorization", "Bearer ynGTFjuTJMmLKQA")
-      |> APISexAuthBearer.call(opts)
+      |> APIacAuthBearer.call(opts)
 
     refute conn.status in [401, 403]
     refute conn.halted
-    assert APISex.authenticated?(conn) == true
-    assert APISex.machine_to_machine?(conn) == false
-    assert APISex.authenticator(conn) == APISexAuthBearer
-    assert APISex.client(conn) == "testclient"
-    assert APISex.subject(conn) == "jean-paul"
+    assert APIac.authenticated?(conn) == true
+    assert APIac.machine_to_machine?(conn) == false
+    assert APIac.authenticator(conn) == APIacAuthBearer
+    assert APIac.client(conn) == "testclient"
+    assert APIac.subject(conn) == "jean-paul"
   end
 
   test "invalid bearer, check error response" do
     opts =
-      APISexAuthBearer.init(
+      APIacAuthBearer.init(
         realm: "realm9",
         bearer_validator:
-          {APISexAuthBearer.Validator.Identity,
+          {APIacAuthBearer.Validator.Identity,
            [
              response: {:error, %{"active" => false}}
            ]}
@@ -42,13 +42,13 @@ defmodule APISexAuthBearerTest do
     conn =
       conn(:get, "/")
       |> put_req_header("authorization", "Bearer ynGTFjuTJMmLKQA")
-      |> APISexAuthBearer.call(opts)
+      |> APIacAuthBearer.call(opts)
 
     assert conn.status == 401
     assert conn.halted
-    refute APISex.authenticated?(conn) == true
-    assert APISex.client(conn) == nil
-    assert APISex.subject(conn) == nil
+    refute APIac.authenticated?(conn) == true
+    assert APIac.client(conn) == nil
+    assert APIac.subject(conn) == nil
 
     assert Plug.Conn.get_resp_header(conn, "www-authenticate") in [
              ["Bearer realm=\"realm9\", error=\"invalid_token\""],
@@ -58,28 +58,28 @@ defmodule APISexAuthBearerTest do
 
   test "no bearer, check error response" do
     opts =
-      APISexAuthBearer.init(
+      APIacAuthBearer.init(
         realm: "realm9",
-        bearer_validator: {APISexAuthBearer.Validator.Identity, []}
+        bearer_validator: {APIacAuthBearer.Validator.Identity, []}
       )
 
     conn =
       conn(:get, "/")
-      |> APISexAuthBearer.call(opts)
+      |> APIacAuthBearer.call(opts)
 
     assert conn.status == 401
     assert conn.halted
-    refute APISex.authenticated?(conn) == true
-    assert APISex.client(conn) == nil
-    assert APISex.subject(conn) == nil
+    refute APIac.authenticated?(conn) == true
+    assert APIac.client(conn) == nil
+    assert APIac.subject(conn) == nil
     assert Plug.Conn.get_resp_header(conn, "www-authenticate") == ["Bearer realm=\"realm9\""]
   end
 
   test "a bearer in the body can be retreived and validated" do
     opts =
-      APISexAuthBearer.init(
+      APIacAuthBearer.init(
         bearer_validator:
-          {APISexAuthBearer.Validator.Identity,
+          {APIacAuthBearer.Validator.Identity,
            [
              response: {:ok, %{"active" => true}}
            ]},
@@ -90,21 +90,21 @@ defmodule APISexAuthBearerTest do
     conn =
       conn(:get, "/")
       |> put_body_params(%{"param1" => "value1", "access_token" => "9z41XZ1ep2MF0d6eMX7X"})
-      |> APISexAuthBearer.call(opts)
+      |> APIacAuthBearer.call(opts)
 
     refute conn.status in [401, 403]
     refute conn.halted
-    assert APISex.authenticated?(conn) == true
-    assert APISex.machine_to_machine?(conn) == false
-    assert APISex.authenticator(conn) == APISexAuthBearer
-    assert APISex.metadata(conn)["bearer"] == "9z41XZ1ep2MF0d6eMX7X"
+    assert APIac.authenticated?(conn) == true
+    assert APIac.machine_to_machine?(conn) == false
+    assert APIac.authenticator(conn) == APIacAuthBearer
+    assert APIac.metadata(conn)["bearer"] == "9z41XZ1ep2MF0d6eMX7X"
   end
 
   test "a bearer in the query can be retreived and validated" do
     opts =
-      APISexAuthBearer.init(
+      APIacAuthBearer.init(
         bearer_validator:
-          {APISexAuthBearer.Validator.Identity,
+          {APIacAuthBearer.Validator.Identity,
            [
              response: {:ok, %{"active" => true}}
            ]},
@@ -115,22 +115,22 @@ defmodule APISexAuthBearerTest do
     conn =
       conn(:get, "/")
       |> put_query_params(%{"param1" => "value1", "access_token" => "9z41XZ1ep2MF0d6eMX7X"})
-      |> APISexAuthBearer.call(opts)
+      |> APIacAuthBearer.call(opts)
 
     refute conn.status in [401, 403]
     refute conn.halted
-    assert APISex.authenticated?(conn) == true
-    assert APISex.machine_to_machine?(conn) == false
-    assert APISex.authenticator(conn) == APISexAuthBearer
-    assert APISex.metadata(conn)["bearer"] == "9z41XZ1ep2MF0d6eMX7X"
+    assert APIac.authenticated?(conn) == true
+    assert APIac.machine_to_machine?(conn) == false
+    assert APIac.authenticator(conn) == APIacAuthBearer
+    assert APIac.metadata(conn)["bearer"] == "9z41XZ1ep2MF0d6eMX7X"
   end
 
   test "a bearer with sufficient scopes" do
     opts =
-      APISexAuthBearer.init(
+      APIacAuthBearer.init(
         realm: "Pays des merveilles",
         bearer_validator:
-          {APISexAuthBearer.Validator.Identity,
+          {APIacAuthBearer.Validator.Identity,
            [
              response:
                {:ok,
@@ -156,20 +156,20 @@ defmodule APISexAuthBearerTest do
     conn =
       conn(:get, "/")
       |> put_req_header("authorization", "Bearer ynGTFjuTJMmLKQA")
-      |> APISexAuthBearer.call(opts)
+      |> APIacAuthBearer.call(opts)
 
     refute conn.status in [401, 403]
     refute conn.halted
-    assert APISex.authenticated?(conn) == true
-    assert APISex.authenticator(conn) == APISexAuthBearer
+    assert APIac.authenticated?(conn) == true
+    assert APIac.authenticator(conn) == APIacAuthBearer
   end
 
   test "a bearer with insufficient scopes" do
     opts =
-      APISexAuthBearer.init(
+      APIacAuthBearer.init(
         realm: "Pays des merveilles",
         bearer_validator:
-          {APISexAuthBearer.Validator.Identity,
+          {APIacAuthBearer.Validator.Identity,
            [
              response: {:ok, %{"active" => true, "scope" => ["scope1", "scope3", "scope5"]}}
            ]},
@@ -179,11 +179,11 @@ defmodule APISexAuthBearerTest do
     conn =
       conn(:get, "/")
       |> put_req_header("authorization", "Bearer ynGTFjuTJMmLKQA")
-      |> APISexAuthBearer.call(opts)
+      |> APIacAuthBearer.call(opts)
 
     assert conn.status == 403
     assert conn.halted
-    refute APISex.authenticated?(conn) == true
+    refute APIac.authenticated?(conn) == true
 
     assert Plug.Conn.get_resp_header(conn, "www-authenticate") in [
              [
@@ -209,9 +209,9 @@ defmodule APISexAuthBearerTest do
 
   test "metadata are correctly forwarded" do
     opts =
-      APISexAuthBearer.init(
+      APIacAuthBearer.init(
         bearer_validator:
-          {APISexAuthBearer.Validator.Identity,
+          {APIacAuthBearer.Validator.Identity,
            [
              response:
                {:ok,
@@ -228,41 +228,41 @@ defmodule APISexAuthBearerTest do
     conn =
       conn(:get, "/")
       |> put_req_header("authorization", "Bearer ynGTFjuTJMmLKQA")
-      |> APISexAuthBearer.call(opts)
+      |> APIacAuthBearer.call(opts)
 
     refute conn.status in [401, 403]
     refute conn.halted
-    assert APISex.authenticated?(conn) == true
-    assert APISex.authenticator(conn) == APISexAuthBearer
-    assert APISex.metadata(conn)["username"] == "Hugo"
-    assert APISex.metadata(conn)["non_standard_attr"] == "something"
-    refute APISex.metadata(conn)["not_forwarded"] == "never ever"
+    assert APIac.authenticated?(conn) == true
+    assert APIac.authenticator(conn) == APIacAuthBearer
+    assert APIac.metadata(conn)["username"] == "Hugo"
+    assert APIac.metadata(conn)["non_standard_attr"] == "something"
+    refute APIac.metadata(conn)["not_forwarded"] == "never ever"
   end
 
   test "cache interface works with another cache" do
     opts =
-      APISexAuthBearer.init(
+      APIacAuthBearer.init(
         bearer_validator:
-          {APISexAuthBearer.Validator.Identity,
+          {APIacAuthBearer.Validator.Identity,
            [
              response:
                {:ok, %{"active" => true, "client_id" => "testclient", "sub" => "jean-paul"}}
            ]},
-        cache: {APISexAuthBearer.Cache.ETSMock, []}
+        cache: {APIacAuthBearer.Cache.ETSMock, []}
       )
 
     conn =
       conn(:get, "/")
       |> put_req_header("authorization", "Bearer ynGTFjuTJMmLKQA")
-      |> APISexAuthBearer.call(opts)
+      |> APIacAuthBearer.call(opts)
 
     refute conn.status in [401, 403]
     refute conn.halted
-    assert APISex.authenticated?(conn) == true
-    assert APISex.machine_to_machine?(conn) == false
-    assert APISex.authenticator(conn) == APISexAuthBearer
-    assert APISex.client(conn) == "testclient"
-    assert APISex.subject(conn) == "jean-paul"
+    assert APIac.authenticated?(conn) == true
+    assert APIac.machine_to_machine?(conn) == false
+    assert APIac.authenticator(conn) == APIacAuthBearer
+    assert APIac.client(conn) == "testclient"
+    assert APIac.subject(conn) == "jean-paul"
   end
 
   defp put_body_params(conn, body_params) do

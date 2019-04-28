@@ -1,8 +1,8 @@
-defmodule APISexAuthBearer.Validator do
+defmodule APIacAuthBearer.Validator do
   @moduledoc """
-  `APISexAuthBearer.Validator` behaviour specification
+  `APIacAuthBearer.Validator` behaviour specification
 
-  An `APISexAuthBearer.Validator` implements a `validate/2` function that take the
+  An `APIacAuthBearer.Validator` implements a `validate/2` function that take the
   following parameters:
   - the Bearer token (a `String.t`)
   - validator-specific options
@@ -15,7 +15,7 @@ defmodule APISexAuthBearer.Validator do
 
   The attributes returned are those documented in
   [RFC7662 section 2.2](https://tools.ietf.org/html/rfc7662#section-2.2), in particular,
-  `APISexAuthBearer` uses:
+  `APIacAuthBearer` uses:
   - `"scope"`: list of the bearer's scopes (list of strings)
   - `"client_id"`: the client's id (string)
   - `"sub"`: the subject (string)

@@ -1,13 +1,13 @@
-defmodule APISexAuthBearer.Cache.NoCache do
+defmodule APIacAuthBearer.Cache.NoCache do
   @moduledoc """
   Default cache module - do not cache
 
   Beware of using it in production environment with
-  `APISexAuthBearer.Validator.Introspect` as the target authorization server will receive
+  `APIacAuthBearer.Validator.Introspect` as the target authorization server will receive
   request for every API request
   """
 
-  @behaviour APISexAuthBearer.Cache
+  @behaviour APIacAuthBearer.Cache
 
   @impl true
   def init_opts(_), do: []

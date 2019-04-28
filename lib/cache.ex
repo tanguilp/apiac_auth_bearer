@@ -1,6 +1,6 @@
-defmodule APISexAuthBearer.Cache do
+defmodule APIacAuthBearer.Cache do
   @moduledoc """
-  `APISexAuthBearer.Cache` behaviour specification
+  `APIacAuthBearer.Cache` behaviour specification
   """
 
   @type opts :: Keyword.t()
@@ -8,7 +8,7 @@ defmodule APISexAuthBearer.Cache do
   @doc """
   Initializes the cache options
 
-  This function is called at compile-time when `APISexAuthBearer` is called in
+  This function is called at compile-time when `APIacAuthBearer` is called in
   a plug pipeline. Its result will be given to `put/3` and `get/2`
   """
   @callback init_opts(opts) :: opts
@@ -17,8 +17,8 @@ defmodule APISexAuthBearer.Cache do
   Stores the bearer's attributes in the cache
   """
   @callback put(
-              APISexAuthBearer.bearer(),
-              APISexAuthBearer.Validator.response_attributes(),
+              APIacAuthBearer.bearer(),
+              APIacAuthBearer.Validator.response_attributes(),
               opts
             ) :: no_return()
 
@@ -27,6 +27,6 @@ defmodule APISexAuthBearer.Cache do
 
   Returns `nil` if the bearer was not found in the cache
   """
-  @callback get(APISexAuthBearer.bearer(), opts) ::
-              APISexAuthBearer.Validator.response_attributes() | nil
+  @callback get(APIacAuthBearer.bearer(), opts) ::
+              APIacAuthBearer.Validator.response_attributes() | nil
 end

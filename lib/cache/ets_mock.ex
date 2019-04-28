@@ -1,5 +1,5 @@
-defmodule APISexAuthBearer.Cache.ETSMock do
-  @behaviour APISexAuthBearer.Cache
+defmodule APIacAuthBearer.Cache.ETSMock do
+  @behaviour APIacAuthBearer.Cache
 
   @moduledoc """
   A mock cache implementation for tests
@@ -15,14 +15,14 @@ defmodule APISexAuthBearer.Cache.ETSMock do
   def put(bearer, attributes, _opts) do
     create_ets_table()
 
-    :ets.insert(:apisex_auth_bearer_cache_ets_mock, {bearer, attributes})
+    :ets.insert(:apiac_auth_bearer_cache_ets_mock, {bearer, attributes})
   end
 
   @impl true
   def get(bearer, _opts) do
     create_ets_table()
 
-    case :ets.lookup(:apisex_auth_bearer_cache_ets_mock, bearer) do
+    case :ets.lookup(:apiac_auth_bearer_cache_ets_mock, bearer) do
       [{_bearer, attrs}] ->
         attrs
 
@@ -32,8 +32,8 @@ defmodule APISexAuthBearer.Cache.ETSMock do
   end
 
   defp create_ets_table() do
-    if :ets.info(:apisex_auth_bearer_cache_ets_mock) == :undefined do
-      :ets.new(:apisex_auth_bearer_cache_ets_mock, [:set, :public, :named_table])
+    if :ets.info(:apiac_auth_bearer_cache_ets_mock) == :undefined do
+      :ets.new(:apiac_auth_bearer_cache_ets_mock, [:set, :public, :named_table])
     end
   end
 end

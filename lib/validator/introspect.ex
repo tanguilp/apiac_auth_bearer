@@ -1,5 +1,5 @@
-defmodule APISexAuthBearer.Validator.Introspect do
-  @behaviour APISexAuthBearer.Validator
+defmodule APIacAuthBearer.Validator.Introspect do
+  @behaviour APIacAuthBearer.Validator
 
   @moduledoc """
   An implementation of client Bearer validation conforming to [RFC7662](https://tools.ietf.org/html/rfc7662)

@@ -1,10 +1,10 @@
-defmodule APISexAuthBearer.Mixfile do
+defmodule APIacAuthBearer.Mixfile do
   use Mix.Project
 
   def project do
     [
-      app: :apisex_auth_bearer,
-      version: "0.1.0",
+      app: :apiac_auth_bearer,
+      version: "0.2.0",
       elixir: "~> 1.5",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -29,7 +29,7 @@ defmodule APISexAuthBearer.Mixfile do
       {:tesla, "~> 1.2.0"},
       # Tesla's adapter
       {:hackney, "~> 1.0"},
-      {:apisex, github: "tanguilp/apisex", tag: "0.1.0"},
+      {:apiac, github: "tanguilp/apiac", tag: "0.2.0"},
       {:oauth2_utils, github: "tanguilp/oauth2_utils", tag: "master"},
       {:oauth2_metadata_updater,
        github: "tanguilp/oauth2_metadata_updater", tag: "master", optional: true},
