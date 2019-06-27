@@ -29,7 +29,7 @@ defmodule APIacAuthBearer.Mixfile do
       {:tesla, "~> 1.2.0"},
       # Tesla's adapter
       {:hackney, "~> 1.0"},
-      {:apiac, github: "tanguilp/apiac", tag: "0.2.0"},
+      {:apiac, github: "tanguilp/apiac", tag: "0.3.0"},
       {:oauth2_utils, github: "tanguilp/oauth2_utils", tag: "master"},
       {:oauth2_metadata_updater,
        github: "tanguilp/oauth2_metadata_updater", tag: "master", optional: true},
