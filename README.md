@@ -35,7 +35,7 @@ Bearer tokens are usually:
 ```elixir
 def deps do
   [
-    {:apiac_auth_bearer, github: "tanguilp/apiac_auth_bearer", tag: "v0.2.0"}
+    {:apiac_auth_bearer, "~> 1.0"}
   ]
 end
 ```
