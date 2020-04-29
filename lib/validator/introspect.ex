@@ -44,7 +44,7 @@ defmodule APIacAuthBearer.Validator.Introspect do
          {:ok, %Tesla.Env{status: 200, headers: headers, body: resp_body}} <-
            Tesla.post(http_client, introspection_endpoint, req_body),
          :ok <- valid_content_type?(headers),
-         {:ok, parsed_body} <- Poison.decode(resp_body) do
+         {:ok, parsed_body} <- Jason.decode(resp_body) do
       case parsed_body do
         %{"active" => true} ->
           {:ok, parsed_body}
