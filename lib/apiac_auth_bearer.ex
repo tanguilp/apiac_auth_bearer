@@ -1,10 +1,4 @@
 defmodule APIacAuthBearer do
-  @behaviour Plug
-  @behaviour APIac.Authenticator
-
-  alias OAuth2Utils.Scope, as: Scope
-  alias OAuth2Utils.Scope.Set, as: ScopeSet
-
   @moduledoc """
   An `APIac.Authenticator` plug for API authentication using the OAuth2 `Bearer` scheme
 
@@ -38,9 +32,16 @@ defmodule APIacAuthBearer do
 
   ## Validating the access token
 
-  This plug provides with the `APIacAuthBearer.Validator.Introspect` bearer validator,
-  that implements the only standard for bearer validation:
-  [RFC7662 - OAuth 2.0 Token Introspection](https://tools.ietf.org/html/rfc7662)
+  This plug provides with 2 bearer verification implementations:
+  - `APIacAuthBearer.Validator.Introspect` which implements
+  [RFC7662 - OAuth 2.0 Token Introspection](https://tools.ietf.org/html/rfc7662), and
+  which consists in requesting validation of the token on the authorization server
+  that has issued it
+  - `APIacAuthBearer.Validator.JWT` which implements
+  [JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://tools.ietf.org/html/draft-ietf-oauth-access-token-jwt-07)
+  and which consists in locally verifying signed (and possibly encrypted)
+  tokens, using the cryptographic keys of the authorization server and of the current
+  API (using this plug)
 
   A validator must implement the `APIacAuthBearer.Validator` behaviour.
 
@@ -63,7 +64,7 @@ defmodule APIacAuthBearer do
 
   ## Validation flow sequence diagram
 
-  ![SVG sequence diagram of the validation flow](success_flow.svg)
+  ![SVG sequence diagram of the validation flow](https://raw.githubusercontent.com/tanguilp/apiac_auth_bearer/master/media/success_flow.svg)
 
   ## Plug options
 
@@ -93,10 +94,10 @@ defmodule APIacAuthBearer do
   validator's response to set in the APIac metadata, or the `:all` atom to forward all
   of the response's data.
   For example: `["username", "aud"]`. Defaults to `[]`
-  - `resource_server_name`: the name of the resource server as a String, to be
+  - `resource_indicator`: the name of the resource server as a String, to be
   checked against the `aud` attribute returned by the validator. This is an optional
-  security mecanism. See the security consideration sections. Defaults to `nil`, i.e.
-  no check of this parameter
+  security mecanism for RFC7662 and mandatory for JWT access tokens. See the security
+  consideration sections. Defaults to `nil`, i.e. no check of this parameter
   - `cache`: a `{cache_module, cache_options}` tuple where `cache_module` is
   a module implementing the `APIacAuthBearer.Cache` behaviour and `cache_options`
   module-specific options that will be passed to the cache when called.
@@ -123,18 +124,19 @@ defmodule APIacAuthBearer do
   ## Example
 
   ```elixir
-  plug APIacAuthBearer, bearer_validator: {APIacAuthBearer.Validator.Introspect,
-                                            [
-                                              issuer: "https://example.com/auth"
-                                              tesla_middleware:[
-                                                {Tesla.Middleware.BasicAuth, [username: "client_id_123", password: "WN2P3Ci+meSLtVipc1EZhbFm2oZyMgWIx/ygQhngFbo"]}
-                                              ]
-                                            ]},
-                          bearer_extract_methods: [:header, :body],
-                          required_scopes: ["article:write", "comments:moderate"],
-                          forward_bearer: true,
-                          resource_server_name: "https://example.com/api/data"
-                          cache: {APIacAuthBearerCacheCachex, []}
+  plug APIacAuthBearer, bearer_validator: {
+    APIacAuthBearer.Validator.Introspect,
+    [
+      issuer: "https://example.com/auth"
+      tesla_middleware:[
+        {Tesla.Middleware.BasicAuth, [username: "client_id_123", password: "WN2P3Ci+meSLtVipc1EZhbFm2oZyMgWIx/ygQhngFbo"]}
+      ]
+    ]},
+    bearer_extract_methods: [:header, :body],
+    required_scopes: ["article:write", "comments:moderate"],
+    forward_bearer: true,
+    resource_indicator: "https://example.com/api/data"
+    cache: {APIacAuthBearerCacheCachex, []}
 
   ```
 
@@ -189,7 +191,8 @@ defmodule APIacAuthBearer do
   > servers), in the token.  Restricting the use of the token to a
   > specific scope is also RECOMMENDED.
 
-  Consider implementing it using the `resource_server_name` parameter.
+  Consider implementing it using the `resource_indicator` parameter when using the
+  RFC7662 introspection validator.
 
   ### URI Query Parameter
   According to RFC6750, section 2.3,:
@@ -202,16 +205,17 @@ defmodule APIacAuthBearer do
   This plug does set the `cache-control` to `private` when such a method
   is used. Beware, however, of not overwriting it later unless you
   know what you're doing.
-
   """
+
+  @behaviour Plug
+  @behaviour APIac.Authenticator
+
+  alias OAuth2Utils.Scope, as: Scope
+  alias OAuth2Utils.Scope.Set, as: ScopeSet
 
   @default_realm_name "default_realm"
 
   @type bearer :: String.t()
-
-  @doc """
-  Plug initialization callback
-  """
 
   @impl Plug
   def init(opts) do
@@ -233,9 +237,26 @@ defmodule APIacAuthBearer do
       end
     )
 
-    if opts[:bearer_validator] == nil, do: raise("Missing mandatory option `bearer_validator`")
+    if opts[:bearer_validator] == nil,
+      do: raise("Missing mandatory option `bearer_validator`")
 
-    {cache_module, cache_opts} = Keyword.get(opts, :cache, {APIacAuthBearer.Cache.NoCache, []})
+    {validator_module, validator_opts} = opts[:bearer_validator]
+
+    validator_opts =
+      Keyword.take(opts, [:resource_indicator])
+      |> Keyword.merge(validator_opts)
+
+    case validator_module.validate_opts(validator_opts) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        raise reason
+    end
+
+    {cache_module, cache_opts} =
+      Keyword.get(opts, :cache, {APIacAuthBearer.Cache.NoCache, []})
+
     cache_opts = Keyword.put_new(cache_opts, :ttl, 200)
 
     opts
@@ -248,11 +269,9 @@ defmodule APIacAuthBearer do
     |> Map.put_new(:forward_bearer, false)
     |> Map.put_new(:forward_metadata, [])
     |> Map.put(:cache, {cache_module, cache_module.init_opts(cache_opts)})
+    |> Map.put(:validator_module, validator_module)
+    |> Map.put(:validator_opts, validator_opts)
   end
-
-  @doc """
-  Plug pipeline callback
-  """
 
   @impl Plug
   @spec call(Plug.Conn.t(), Plug.opts()) :: Plug.Conn.t()
@@ -280,7 +299,6 @@ defmodule APIacAuthBearer do
   Returns the credentials under the form `String.t()` which
   is the bearer token
   """
-
   @impl APIac.Authenticator
   def extract_credentials(conn, opts) do
     case Enum.reduce_while(
@@ -402,9 +420,7 @@ defmodule APIacAuthBearer do
 
       # bearer is not in cache
       nil ->
-        {bearer_validator, bearer_validator_opts} = opts[:bearer_validator]
-
-        case bearer_validator.validate(bearer, bearer_validator_opts) do
+        case opts[:validator_module].validate_bearer(bearer, opts[:validator_opts]) do
           {:ok, bearer_data} ->
             try do
               # let's lower the ttl when the "exp" member of the bearer's data
@@ -477,10 +493,10 @@ defmodule APIacAuthBearer do
   end
 
   defp verify_audience(conn, bearer_data, opts) do
-    if opts[:resource_server_name] != nil do
+    if opts[:resource_indicator] != nil do
       case bearer_data["aud"] do
         aud when is_binary(aud) ->
-          if opts[:resource_server_name] == aud do
+          if opts[:resource_indicator] == aud do
             :ok
           else
             {:error, conn,
@@ -491,7 +507,7 @@ defmodule APIacAuthBearer do
           end
 
         aud_list when is_list(aud_list) ->
-          if opts[:resource_server_name] in aud_list do
+          if opts[:resource_indicator] in aud_list do
             :ok
           else
             {:error, conn,

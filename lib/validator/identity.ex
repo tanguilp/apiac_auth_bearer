@@ -8,8 +8,12 @@ defmodule APIacAuthBearer.Validator.Identity do
   @doc """
   Returns data passed as the `:response` member of the `opts` parameter
   """
+
   @impl true
-  def validate(_bearer, opts) do
+  def validate_opts(_), do: :ok
+
+  @impl true
+  def validate_bearer(_bearer, opts) do
     opts[:response]
   end
 end
