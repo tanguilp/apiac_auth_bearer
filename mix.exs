@@ -30,7 +30,6 @@ defmodule APIacAuthBearer.Mixfile do
       {:dialyxir, "~> 1.0.0-rc.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.19", only: :dev, runtime: false},
       {:hackney, "~> 1.0"},
-      {:httpoison, "~> 1.0"},
       {:jose_utils, "~> 0.3"},
       {:jwks_uri_updater, "~> 1.0"},
       {:oauth2_metadata_updater, "~> 1.0"},
