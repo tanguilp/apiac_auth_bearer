@@ -35,9 +35,19 @@ Bearer tokens are usually:
 ```elixir
 def deps do
   [
-    {:apiac_auth_bearer, "~> 2.0"}
+    {:apiac_auth_bearer, "~> 2.0"},
+    {:hackney, "~> 1.0"}
   ]
 end
+```
+
+The hackney dependency is used as the default adapter for Tesla. Another one can be used
+instead (see
+[https://github.com/teamon/tesla#adapters](https://github.com/teamon/tesla#adapters)) and then
+has to be configured in your `config.exs`:
+
+```elixir
+config :tesla, adapter: Tesla.Adapter.AnotherOne
 ```
 
 ## Validating the access token
