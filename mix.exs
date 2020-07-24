@@ -5,7 +5,7 @@ defmodule APIacAuthBearer.Mixfile do
     [
       app: :apiac_auth_bearer,
       description: "An APIac authenticator plug for API authentication using the HTTP Bearer scheme",
-      version: "1.0.0",
+      version: "1.1.0",
       elixir: "~> 1.5",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -32,7 +32,7 @@ defmodule APIacAuthBearer.Mixfile do
       {:hackney, "~> 1.0"},
       {:apiac, "~> 1.0"},
       {:oauth2_utils, "~> 0.1.0"},
-      {:oauth2_metadata_updater, "~> 1.0"},
+      {:oauth2_metadata_updater, "~> 1.2"},
       {:dialyxir, "~> 1.0.0-rc.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.19", only: :dev, runtime: false}
     ]

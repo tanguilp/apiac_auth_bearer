@@ -35,7 +35,7 @@ Bearer tokens are usually:
 ```elixir
 def deps do
   [
-    {:apiac_auth_bearer, "~> 1.0"}
+    {:apiac_auth_bearer, "~> 1.1"}
   ]
 end
 ```
