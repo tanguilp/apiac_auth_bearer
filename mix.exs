@@ -35,8 +35,8 @@ defmodule APIacAuthBearer.Mixfile do
       {:oauth2_metadata_updater, "~> 1.0"},
       {:oauth2_utils, "~> 0.1.0"},
       {:plug, "~> 1.0"},
-      {:tesla, "~> 1.3.0"},
-      {:tesla_oauth2_client_auth, "~> 0.2"}
+      {:tesla, "~> 1.0"},
+      {:tesla_oauth2_client_auth, "~> 1.0"}
     ]
   end
 

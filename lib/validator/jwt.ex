@@ -35,7 +35,15 @@ defmodule APIacAuthBearer.Validator.JWT do
   not support OAuth2 metadata or OpenID Connect discovery, or to override one or more
   parameters
 
-  The `APIacAuthBearer` `:resource_indicator` is also **mandatory** for this validator.
+  Note that the `"at_encrypted_response_alg"` parameter is **not** registered at the IANA. This
+  is because an OAuth2 RS (*Resource Server*) is not specified as an OAuth2 client. This can
+  be a special case of an OAuth2 client, and is by certain AS implementatios, but it's not
+  specified as such. This library uses the terms `:client_config` and
+  `"at_encrypted_response_alg"` to make it easier to use with backend that do indeed treat
+  RSes as a special type of OAuth2 client.
+
+  The `APIacAuthBearer` `:resource_indicator` is also **mandatory** for this validator per the
+  specification.
   """
 
   @behaviour APIacAuthBearer.Validator
@@ -69,7 +77,7 @@ defmodule APIacAuthBearer.Validator.JWT do
   @impl true
   def validate_bearer(bearer, opts) do
     with %{} = client_config <- opts[:client_config].(),
-         :ok <- verify_type(bearer),
+         :ok <- verify_typ(bearer),
          {:ok, jws} <- maybe_decrypt(bearer, client_config),
          {:ok, payload_str} <- verify_signature(jws, opts),
          {:ok, payload} <- Jason.decode(payload_str),
@@ -89,7 +97,7 @@ defmodule APIacAuthBearer.Validator.JWT do
     end
   end
 
-  defp verify_type(bearer) do
+  defp verify_typ(bearer) do
     cond do
       JOSEUtils.is_jws?(bearer) ->
         case JOSEUtils.JWS.peek_header(bearer) do
