@@ -11,7 +11,7 @@ defmodule APIacAuthBearer.Mixfile do
       deps: deps(),
       docs: [
         main: "readme",
-        extras: ["README.md"]
+        extras: ["README.md", "CHANGELOG.md"]
       ],
       package: package(),
       source_url: "https://github.com/tanguilp/apiac_auth_bearer"
