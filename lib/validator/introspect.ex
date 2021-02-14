@@ -59,7 +59,7 @@ defmodule APIacAuthBearer.Validator.Introspect do
         %{"active" => true} ->
           {:ok, resp_body}
 
-        other ->
+        _other ->
           {:error, :invalid_token}
       end
     else
@@ -112,7 +112,7 @@ defmodule APIacAuthBearer.Validator.Introspect do
       {:ok, issuer_metadata} ->
         Map.merge(issuer_metadata, opts[:server_metadata] || %{})
 
-      {:error, _} = error ->
+      {:error, _} ->
         opts[:server_metadata] || %{}
     end
   end

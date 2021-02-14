@@ -33,7 +33,6 @@ defmodule APIacAuthBearerTest.Validator.JWT do
   }
 
   @valid_options [
-    client_config: &__MODULE__.client_config/0,
     issuer: "some issuer",
     resource_indicator: "some resource indicator",
     server_metadata: @server_metadata
@@ -42,10 +41,6 @@ defmodule APIacAuthBearerTest.Validator.JWT do
   describe ".validate_opts" do
     test "valid opts" do
       assert JWT.validate_opts(@valid_options) == :ok
-    end
-
-    test "missing client config" do
-      assert {:error, _} = JWT.validate_opts(@valid_options |> Keyword.delete(:client_config))
     end
 
     test "missing issuer" do
@@ -112,30 +107,36 @@ defmodule APIacAuthBearerTest.Validator.JWT do
       assert {:error, _} = JWT.validate_bearer(bearer, @valid_options)
     end
 
+    test "encrypted AT with missing client config" do
+      bearer = @valid_jwt_payload |> gen_jwt("RS256", "RSA-OAEP", "A128GCM")
+
+      assert {:error, _} = JWT.validate_bearer(bearer, @valid_options)
+    end
+
     test "valid encrypted then signed AT with RSA encryption" do
       bearer = @valid_jwt_payload |> gen_jwt("RS256", "RSA-OAEP", "A128GCM")
-      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_rsa_oaep/0)
+      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_rsa_oaep/1)
 
       assert {:ok, @valid_jwt_payload} = JWT.validate_bearer(bearer, opts)
     end
 
     test "valid encrypted then signed AT with ECDH-ES encryption" do
       bearer = @valid_jwt_payload |> gen_jwt("RS256", "ECDH-ES", "A128GCM")
-      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_ecdh_es/0)
+      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_ecdh_es/1)
 
       assert {:ok, @valid_jwt_payload} = JWT.validate_bearer(bearer, opts)
     end
 
     test "valid encrypted then signed AT with dir symmetric encryption" do
       bearer = @valid_jwt_payload |> gen_jwt("RS256", "dir", "A256GCM")
-      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_dir/0)
+      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_dir/1)
 
       assert {:ok, @valid_jwt_payload} = JWT.validate_bearer(bearer, opts)
     end
 
     test "encrypted then signed AT with invalid at_encrypted_response_alg value" do
       bearer = @valid_jwt_payload |> gen_jwt("RS256", "RSA-OAEP", "A256GCM")
-      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_dir/0)
+      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_dir/1)
 
       assert {:error, _} = JWT.validate_bearer(bearer, opts)
     end
@@ -143,14 +144,14 @@ defmodule APIacAuthBearerTest.Validator.JWT do
     test "encrypted then signed AT with invalid type" do
       bearer =
         @valid_jwt_payload |> gen_jwt("RS256", "RSA-OAEP", "A128GCM", %{"typ" => "x("})
-      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_rsa_oaep/0)
+      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_rsa_oaep/1)
 
       assert {:error, _} = JWT.validate_bearer(bearer, opts)
     end
 
     test "encrypted then signed AT with missing type" do
       bearer = @valid_jwt_payload |> gen_jwt("RS256", "RSA-OAEP", "A128GCM", %{})
-      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_rsa_oaep/0)
+      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_rsa_oaep/1)
 
       assert {:error, _} = JWT.validate_bearer(bearer, opts)
     end
@@ -159,7 +160,7 @@ defmodule APIacAuthBearerTest.Validator.JWT do
       bearer = @valid_jwt_payload |> gen_jwt("RS256", "RSA-OAEP", "A128GCM")
       [header, encrypted_key, iv, ciphertext, tag] = String.split(bearer, ".")
       bearer = Enum.join([header, encrypted_key, iv, ciphertext <> "invalid", tag])
-      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_rsa_oaep/0)
+      opts = Keyword.put(@valid_options, :client_config, &client_config_enc_rsa_oaep/1)
 
       assert {:error, _} = JWT.validate_bearer(bearer, opts)
     end
@@ -182,7 +183,7 @@ defmodule APIacAuthBearerTest.Validator.JWT do
     jws = gen_jwt(payload, sig_alg, %{})
 
     [encryption_key | _] =
-      client_config()["jwks"]["keys"]
+      @client_keys
       |> JOSEUtils.JWKS.encryption_keys()
       |> JOSEUtils.JWKS.filter(alg: enc_alg)
 
@@ -201,22 +202,14 @@ defmodule APIacAuthBearerTest.Validator.JWT do
     JOSEUtils.JWE.encrypt!(jws, jwk, enc_alg, enc_enc, additional_headers)
   end
 
-  def client_config() do
-    %{
-      "jwks" => %{
-        "keys" => @client_keys
-      }
-    }
-  end
+  def client_config_enc_rsa_oaep(_opts),
+    do: %{"at_encrypted_response_alg" => "RSA-OAEP", "jwks" => %{"keys" => @client_keys}}
 
-  def client_config_enc_rsa_oaep(),
-    do: %{"at_encrypted_response_alg" => "RSA-OAEP"} |> Map.merge(client_config())
+  def client_config_enc_ecdh_es(_opts),
+    do: %{"at_encrypted_response_alg" => "ECDH-ES", "jwks" => %{"keys" => @client_keys}}
 
-  def client_config_enc_ecdh_es(),
-    do: %{"at_encrypted_response_alg" => "ECDH-ES"} |> Map.merge(client_config())
-
-  def client_config_enc_dir(),
-    do: %{"at_encrypted_response_alg" => "dir"} |> Map.merge(client_config())
+  def client_config_enc_dir(_opts),
+    do: %{"at_encrypted_response_alg" => "dir", "jwks" => %{"keys" => @client_keys}}
 
   defp now(), do: System.system_time(:second)
 end

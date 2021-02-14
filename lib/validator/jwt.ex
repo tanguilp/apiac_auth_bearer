@@ -3,13 +3,14 @@ defmodule APIacAuthBearer.Validator.JWT do
   An implementation of [JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://tools.ietf.org/html/draft-ietf-oauth-access-token-jwt-07).
 
   This validator accepts the following options:
-  - `:client_config` **[Mandatory]**: a `( -> %{required(String.t()) => any()})` function
-  that returns the OAuth2 / OpenID Connect client configuration of the current resource
-  server. The following fields may be used:
-    - `"at_encrypted_response_alg"`: if set, the algortithm used to decrypt
-    bearer token. Non-encrypted tokens are rejected
-    - `"jwks"` and `"jwks_uri"`: used to decrypt bearer tokens when a symmetric encryption
-    or signature algorithm is used
+  - `:issuer` **[Mandatory]**: an OAuth2 issuer whose metadata and keys will be resolved
+  automatically
+  - `:client_config`: a `(APIacAuthBearer.Validator.opts() -> %{required(String.t()) => any()})`
+  function that returns the RS (*resource server*) configuration in case encryption is used. The
+  following fields are to be set:
+    - `"at_encrypted_response_alg"` [**mandatory**]]: the algorithm used to decrypt
+    bearer token
+    - `"jwks"` or `"jwks_uri"`: RS' symmetric or asymmetric keys used to decrypt the token
 
           %{
             "at_encrypted_response_alg" => "ECDH-ES",
@@ -26,21 +27,18 @@ defmodule APIacAuthBearer.Validator.JWT do
             }
           }
 
-  - `:issuer` **[Mandatory]**: an OAuth2 issuer whose metadata and keys will be resolved
-  automatically
   - `:oauth2_metadata_updater_opts`: options that will be passed to
   `Oauth2MetadataUpdater`
   - `:server_metadata`: server metadata that takes precedence over those automatically
-  retrieve from the server (requested from the issuer). Usefull when the OP does
+  retrieve from the server (requested from the issuer). Useful when the OP does
   not support OAuth2 metadata or OpenID Connect discovery, or to override one or more
   parameters
 
   Note that the `"at_encrypted_response_alg"` parameter is **not** registered at the IANA. This
-  is because an OAuth2 RS (*Resource Server*) is not specified as an OAuth2 client. This can
-  be a special case of an OAuth2 client, and is by certain AS implementatios, but it's not
-  specified as such. This library uses the terms `:client_config` and
-  `"at_encrypted_response_alg"` to make it easier to use with backend that do indeed treat
-  RSes as a special type of OAuth2 client.
+  is because an OAuth2 RS is not specified as an OAuth2 client. This can be a special case of
+  an OAuth2 client, and is by certain AS implementations, but it's not specified as such. This
+  library uses the terms `:client_config` and `"at_encrypted_response_alg"` to make it easier
+  to use with backends that do indeed treat RSes as a special type of OAuth2 client.
 
   The `APIacAuthBearer` `:resource_indicator` is also **mandatory** for this validator per the
   specification.
@@ -60,9 +58,6 @@ defmodule APIacAuthBearer.Validator.JWT do
   @impl true
   def validate_opts(opts) do
     cond do
-      not is_function(opts[:client_config], 0) ->
-        {:error, "missing or invalid mandatory option `:client_config` for #{__MODULE__}"}
-
       not is_binary(opts[:issuer]) ->
         {:error, "missing or invalid mandatory option `:issuer` for #{__MODULE__}"}
 
@@ -76,9 +71,8 @@ defmodule APIacAuthBearer.Validator.JWT do
 
   @impl true
   def validate_bearer(bearer, opts) do
-    with %{} = client_config <- opts[:client_config].(),
-         :ok <- verify_typ(bearer),
-         {:ok, jws} <- maybe_decrypt(bearer, client_config),
+    with :ok <- verify_typ(bearer),
+         {:ok, jws} <- maybe_decrypt(bearer, opts),
          {:ok, payload_str} <- verify_signature(jws, opts),
          {:ok, payload} <- Jason.decode(payload_str),
          :ok <- verify_issuer(payload, opts),
@@ -122,28 +116,24 @@ defmodule APIacAuthBearer.Validator.JWT do
     end
   end
 
-  defp maybe_decrypt(bearer, client_config) do
+  defp maybe_decrypt(bearer, opts) do
     cond do
-      client_config["at_encrypted_response_alg"] && JOSEUtils.is_jwe?(bearer) ->
-        do_decrypt(bearer, client_config)
+      opts[:client_config] && JOSEUtils.is_jwe?(bearer) ->
+        do_decrypt(bearer, opts)
 
       JOSEUtils.is_jwe?(bearer) ->
-        {:error, :client_config_at_encrypted_response_alg_not_configured}
+        {:error, :no_client_config_for_encrypted_token}
 
       true ->
         {:ok, bearer}
     end
   end
 
-  defp do_decrypt(jwe, client_config) do
+  defp do_decrypt(jwe, opts) do
+    client_config = %{"at_encrypted_response_alg" => enc_alg} = opts[:client_config].(opts)
+
     with {:ok, jwks} <- client_jwks(client_config) do
-      JOSEUtils.JWE.decrypt(
-        jwe,
-        jwks,
-        [client_config["at_encrypted_response_alg"]],
-        @all_enc_enc
-      )
-      |> case do
+      case JOSEUtils.JWE.decrypt(jwe, jwks, [enc_alg], @all_enc_enc) do
         {:ok, {jws, _}} ->
           {:ok, jws}
 
@@ -174,21 +164,11 @@ defmodule APIacAuthBearer.Validator.JWT do
     end
   end
 
-  defp verify_issuer(%{"iss" => iss}, opts) do
-    if iss == opts[:issuer] do
-      :ok
-    else
-      {:error, :invalid_issuer}
-    end
-  end
+  defp verify_issuer(%{"iss" => iss}, opts),
+    do: if iss == opts[:issuer], do: :ok, else: {:error, :invalid_issuer}
 
-  defp verify_expiration(%{"exp" => exp}) do
-    if exp >= System.system_time(:second) do
-      :ok
-    else
-      {:error, :expired_jwt_bearer}
-    end
-  end
+  defp verify_expiration(%{"exp" => exp}),
+    do: if exp >= System.system_time(:second), do: :ok, else: {:error, :expired_jwt_bearer}
 
   defp client_jwks(client_config) do
     case client_config do
