@@ -3,14 +3,14 @@ defmodule APIacAuthBearer.Validator.JWT do
   An implementation of [JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://tools.ietf.org/html/draft-ietf-oauth-access-token-jwt-07).
 
   This validator accepts the following options:
-  - `:issuer` **[Mandatory]**: an OAuth2 issuer whose metadata and keys will be resolved
+  - `:issuer` **[mandatory]**: an OAuth2 issuer whose metadata and keys will be resolved
   automatically
   - `:client_config`: a `(APIacAuthBearer.Validator.opts() -> %{required(String.t()) => any()})`
   function that returns the RS (*resource server*) configuration in case encryption is used. The
   following fields are to be set:
-    - `"at_encrypted_response_alg"` [**mandatory**]]: the algorithm used to decrypt
+    - `"at_encrypted_response_alg"` [**mandatory**]: the algorithm used to decrypt
     bearer token
-    - `"jwks"` or `"jwks_uri"`: RS' symmetric or asymmetric keys used to decrypt the token
+    - `"jwks"` [**mandatory**]: RS' symmetric or asymmetric keys used to decrypt the token
 
           %{
             "at_encrypted_response_alg" => "ECDH-ES",
@@ -130,9 +130,9 @@ defmodule APIacAuthBearer.Validator.JWT do
   end
 
   defp do_decrypt(jwe, opts) do
-    client_config = %{"at_encrypted_response_alg" => enc_alg} = opts[:client_config].(opts)
+    case opts[:client_config].(opts) do
+      %{"at_encrypted_response_alg" => enc_alg, "jwks" => %{"keys" => jwks}} ->
 
-    with {:ok, jwks} <- client_jwks(client_config) do
       case JOSEUtils.JWE.decrypt(jwe, jwks, [enc_alg], @all_enc_enc) do
         {:ok, {jws, _}} ->
           {:ok, jws}
@@ -140,6 +140,9 @@ defmodule APIacAuthBearer.Validator.JWT do
         :error ->
           {:error, :jwe_decryption_failure}
       end
+
+      _ ->
+        {:error, :missing_client_config_param}
     end
   end
 
@@ -169,19 +172,6 @@ defmodule APIacAuthBearer.Validator.JWT do
 
   defp verify_expiration(%{"exp" => exp}),
     do: if exp >= System.system_time(:second), do: :ok, else: {:error, :expired_jwt_bearer}
-
-  defp client_jwks(client_config) do
-    case client_config do
-      %{"jwks" => %{"keys" => jwks}} when is_list(jwks) ->
-        {:ok, jwks}
-
-      %{"jwks_uri" => jwks_uri} ->
-        JWKSURIUpdater.get_keys(jwks_uri)
-
-      _ ->
-        {:error, :client_has_no_jwks_configured}
-    end
-  end
 
   defp server_jwks(opts) do
     server_metadata = opts[:server_metadata] || %{}
