@@ -1,6 +1,6 @@
 defmodule APIacAuthBearer.Validator.JWT do
   @moduledoc """
-  An implementation of [JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://tools.ietf.org/html/draft-ietf-oauth-access-token-jwt-07).
+  An implementation of [RFC9068 - JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://tools.ietf.org/html/draft-ietf-oauth-access-token-jwt-07).
 
   This validator accepts the following options:
   - `:issuer` **[mandatory]**: an OAuth2 issuer whose metadata and keys will be resolved

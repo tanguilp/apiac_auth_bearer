@@ -413,9 +413,7 @@ defmodule APIacAuthBearer do
     {cache, cache_opts} = opts[:cache]
 
     case cache.get(bearer, cache_opts) do
-      bearer_data when not is_nil(bearer_data) ->
-        # TODO: refactor as there is no need to revalidate,
-        # cached bearers have already been validated
+      %{} = bearer_data ->
         validate_bearer_data(conn, bearer, bearer_data, opts)
 
       # bearer is not in cache

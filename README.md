@@ -58,7 +58,7 @@ This plug provides with 2 bearer verification implementations:
 which consists in requesting validation of the token on the authorization server
 that has issued it
 - `APIacAuthBearer.Validator.JWT` which implements
-[JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://tools.ietf.org/html/draft-ietf-oauth-access-token-jwt-07)
+[RFC9068 - JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://datatracker.ietf.org/doc/html/rfc9068)
 and which consists in locally verifying signed (and possibly encrypted)
 tokens, using the cryptographic keys of the authorization server and of the current
 API (using this plug)

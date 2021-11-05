@@ -6,7 +6,7 @@ defmodule APIacAuthBearer.Mixfile do
       app: :apiac_auth_bearer,
       description: "An APIac authenticator plug for API authentication using the HTTP Bearer scheme",
       version: "2.0.0",
-      elixir: "~> 1.5",
+      elixir: "~> 1.10",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       docs: [
