@@ -28,5 +28,8 @@ defmodule APIacAuthBearer.Validator do
           optional(String.t()) => any()
         }
 
-  @callback validate(binary(), opts) :: {:ok, __MODULE__.response_attributes()} | {:error, atom()}
+  @callback validate_opts(opts) :: :ok | {:error, error_message :: String.t()}
+
+  @callback validate_bearer(binary(), opts) ::
+  {:ok, __MODULE__.response_attributes()} | {:error, atom()}
 end

@@ -35,16 +35,33 @@ Bearer tokens are usually:
 ```elixir
 def deps do
   [
-    {:apiac_auth_bearer, "~> 1.1"}
+    {:apiac_auth_bearer, "~> 2.0"},
+    {:hackney, "~> 1.0"}
   ]
 end
 ```
 
+The hackney dependency is used as the default adapter for Tesla. Another one can be used
+instead (see
+[https://github.com/teamon/tesla#adapters](https://github.com/teamon/tesla#adapters)) and then
+has to be configured in your `config.exs`:
+
+```elixir
+config :tesla, adapter: Tesla.Adapter.AnotherOne
+```
+
 ## Validating the access token
 
-This plug provides with the `APIacAuthBearer.Validator.Introspect` bearer validator,
-that implements the only standard for bearer validation:
-[RFC7662 - OAuth 2.0 Token Introspection](https://tools.ietf.org/html/rfc7662)
+This plug provides with 2 bearer verification implementations:
+- `APIacAuthBearer.Validator.Introspect` which implements
+[RFC7662 - OAuth 2.0 Token Introspection](https://tools.ietf.org/html/rfc7662), and
+which consists in requesting validation of the token on the authorization server
+that has issued it
+- `APIacAuthBearer.Validator.JWT` which implements
+[RFC9068 - JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://datatracker.ietf.org/doc/html/rfc9068)
+and which consists in locally verifying signed (and possibly encrypted)
+tokens, using the cryptographic keys of the authorization server and of the current
+API (using this plug)
 
 A validator must implement the `APIacAuthBearer.Validator` behaviour.
 
@@ -67,7 +84,7 @@ A cache implements the `APIacAuthBearer.Cache` behaviour.
 
 ## Validation flow sequence diagram
 
-![SVG sequence diagram of the validation flow](doc/success_flow.svg)
+![SVG sequence diagram of the validation flow](https://raw.githubusercontent.com/tanguilp/apiac_auth_bearer/master/media/success_flow.svg)
 
 ## Plug options
 
@@ -97,10 +114,10 @@ Defaults to `false`
 validator's response to set in the APIac metadata, or the `:all` atom to forward all
 of the response's data.
 For example: `["username", "aud"]`. Defaults to `[]`
-- `resource_server_name`: the name of the resource server as a String, to be
+- `resource_indicator`: the name of the resource server as a String, to be
 checked against the `aud` attribute returned by the validator. This is an optional
-security mecanism. See the security consideration sections. Defaults to `nil`, i.e.
-no check of this parameter
+security mecanism for RFC7662 and mandatory for JWT access tokens. See the security
+consideration sections. Defaults to `nil`, i.e. no check of this parameter
 - `cache`: a `{cache_module, cache_options}` tuple where `cache_module` is
 a module implementing the `APIacAuthBearer.Cache` behaviour and `cache_options`
 module-specific options that will be passed to the cache when called.
@@ -127,18 +144,19 @@ For other `:error_response_verbosity` values, see the documentation of the
 ## Example
 
 ```elixir
-plug APIacAuthBearer, bearer_validator: {APIacAuthBearer.Validator.Introspect,
-					  [
-                                            issuer: "https://example.com/auth"
-                                            tesla_middleware:[
-                                              {Tesla.Middleware.BasicAuth, [username: "client_id_123", password: "WN2P3Ci+meSLtVipc1EZhbFm2oZyMgWIx/ygQhngFbo"]}
-                                              ]
-                                          ]},
-                        bearer_extract_methods: [:header, :body],
-                        required_scopes: ["article:write", "comments:moderate"],
-                        forward_bearer: true,
-                        resource_server_name: "https://example.com/api/data"
-                        cache: {APIacAuthBearerCacheCachex, []}
+plug APIacAuthBearer, bearer_validator: {
+  APIacAuthBearer.Validator.Introspect,
+  [
+    issuer: "https://example.com/auth"
+    tesla_middleware:[
+      {Tesla.Middleware.BasicAuth, [username: "client_id_123", password: "WN2P3Ci+meSLtVipc1EZhbFm2oZyMgWIx/ygQhngFbo"]}
+    ]
+  ]},
+  bearer_extract_methods: [:header, :body],
+  required_scopes: ["article:write", "comments:moderate"],
+  forward_bearer: true,
+  resource_indicator: "https://example.com/api/data"
+  cache: {APIacAuthBearerCacheCachex, []}
 
 ```
 
@@ -193,7 +211,8 @@ RFC6750, section 5.2, states that:
 > servers), in the token.  Restricting the use of the token to a
 > specific scope is also RECOMMENDED.
 
-Consider implementing it using the `resource_server_name` parameter.
+Consider implementing it using the `resource_indicator` parameter when using the
+RFC7662 introspection validator.
 
 ### URI Query Parameter
 According to RFC6750, section 2.3,:

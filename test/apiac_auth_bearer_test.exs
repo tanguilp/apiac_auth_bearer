@@ -1,6 +1,5 @@
 defmodule APIacAuthBearerTest do
   use ExUnit.Case, async: true
-  doctest APIacAuthBearer
   use Plug.Test
 
   test "valid bearer, check APIac attributes are correctly set" do
